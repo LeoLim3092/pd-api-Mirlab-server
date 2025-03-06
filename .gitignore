@@ -1,0 +1,6 @@
+api/pdModel/checkpoint/*.bin
+
+sport-record-env/
+*__pycache__*
+.venv/
+media/
