@@ -1,5 +1,5 @@
 api/pdModel/checkpoint/*.bin
-
+db.sqlite3
 sport-record-env/
 *__pycache__*
 .venv/
