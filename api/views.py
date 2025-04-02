@@ -534,7 +534,6 @@ def export_latest_patient_results(request):
     latest_results = (
         Results.objects.values('patientId')  # Group by patientId
         .annotate(latest_upload=Max('upload_time'))  # Get the latest upload time for each patient
-        .select_related('patientId')  # Optimize related object fetching
     )
 
     # Create the HTTP response with CSV content type
@@ -546,20 +545,24 @@ def export_latest_patient_results(request):
     writer.writerow(['Patient ID', 'Patient Name', 'Upload Time', 'Gait Result', 'Voice Result', 'Hand Result', 'Multimodal Results'])
 
     for result in latest_results:
-        # Fetch the full result object for the latest upload time
-        full_result = Results.objects.filter(
-            patientId=result['patientId'], upload_time=result['latest_upload']
-        ).first()
+        try:
+            # Fetch the full result object for the latest upload time
+            full_result = Results.objects.filter(
+                patientId=result['patientId'], upload_time=result['latest_upload']
+            ).first()
 
-        if full_result:
-            writer.writerow([
-                full_result.patientId.patientId,  # Patient ID
-                full_result.patient,             # Patient Name
-                full_result.upload_time,         # Upload Time
-                full_result.gait_result,         # Gait Result
-                full_result.voice_result,        # Voice Result
-                full_result.hand_result,         # Hand Result
-                full_result.multimodal_results   # Multimodal Results
-            ])
+            if full_result:
+                writer.writerow([
+                    full_result.patientId.patientId,  # Patient ID
+                    full_result.patient,             # Patient Name
+                    full_result.upload_time,         # Upload Time
+                    full_result.gait_result,         # Gait Result
+                    full_result.voice_result,        # Voice Result
+                    full_result.hand_result,         # Hand Result
+                    full_result.multimodal_results   # Multimodal Results
+                ])
+        except Results.DoesNotExist:
+            # If no result is found, skip this patient
+            continue
 
     return response

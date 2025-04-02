@@ -15,11 +15,6 @@ router.register(r'users', UserViewSet)
 router.register(r'patient', PatientViewSet)
 urlpatterns = router.urls
 
-urlpatterns = [
-    path('admin/', admin.site.urls),  # Admin interface
-    path('api/', include('api.urls')),  # Include the URLs from your 'api' app
-]
-
 urlpatterns += [
     path('login', views.Login.as_view()),
     path('upload_sound_record', views.UploadSound.as_view()),
