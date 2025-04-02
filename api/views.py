@@ -530,39 +530,43 @@ def check_file_time(file, current_time):
 
 
 def export_latest_patient_results(request):
-    # Query the latest results for each patient
-    latest_results = (
-        Results.objects.values('patientId')  # Group by patientId
-        .annotate(latest_upload=Max('upload_time'))  # Get the latest upload time for each patient
-    )
+    print("Function called")  # Debug statement
 
-    # Create the HTTP response with CSV content type
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="latest_patient_results.csv"'
+    try:
+        # Query the latest results for each patient
+        latest_results = (
+            Results.objects.values('patientId')  # Group by patientId
+            .annotate(latest_upload=Max('upload_time'))  # Get the latest upload time for each patient
+        )
+        print(f"Latest results: {latest_results}")  # Debug statement
 
-    # Write CSV header and rows
-    writer = csv.writer(response)
-    writer.writerow(['Patient ID', 'Patient Name', 'Upload Time', 'Gait Result', 'Voice Result', 'Hand Result', 'Multimodal Results'])
+        # Create the HTTP response with CSV content type
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="latest_patient_results.csv"'
 
-    for result in latest_results:
-        try:
-            # Fetch the full result object for the latest upload time
+        # Write CSV header and rows
+        writer = csv.writer(response)
+        writer.writerow(['Patient ID', 'Patient Name', 'Upload Time', 'Gait Result', 'Voice Result', 'Hand Result', 'Multimodal Results'])
+
+        for result in latest_results:
+            print(f"Processing result: {result}")  # Debug statement
             full_result = Results.objects.filter(
                 patientId=result['patientId'], upload_time=result['latest_upload']
             ).first()
 
             if full_result:
                 writer.writerow([
-                    full_result.patientId.patientId,  # Patient ID
-                    full_result.patient,             # Patient Name
-                    full_result.upload_time,         # Upload Time
-                    full_result.gait_result,         # Gait Result
-                    full_result.voice_result,        # Voice Result
-                    full_result.hand_result,         # Hand Result
-                    full_result.multimodal_results   # Multimodal Results
+                    full_result.patientId.patientId,
+                    full_result.patient,
+                    full_result.upload_time,
+                    full_result.gait_result,
+                    full_result.voice_result,
+                    full_result.hand_result,
+                    full_result.multimodal_results
                 ])
-        except Results.DoesNotExist:
-            # If no result is found, skip this patient
-            continue
+        print("Export completed")  # Debug statement
+        return response
 
-    return response
+    except Exception as e:
+        print(f"Error occurred: {e}")  # Debug statement
+        return HttpResponse(f"Error: {e}", status=500)
