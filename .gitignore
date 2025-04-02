@@ -1,0 +1,12 @@
+api/pdModel/checkpoint/*.bin
+pdmodel/mmpose
+
+*.sqlite3
+*.sqlite
+
+*.ipynb_checkpoints
+
+sport-record-env/
+*__pycache__*
+.venv/
+media/
