@@ -4,10 +4,10 @@ import json
 import datetime
 import csv
 
+from .pdModel.deployModel import model_extraction, predict_models, data_checking
+
 from django.shortcuts import render, redirect
 from django.contrib.auth.models import User, Group
-from .models import PatientRecord, Patient, FileUploaded, Results, PatientQuestionaireRecord, Article
-from rest_framework.decorators import api_view
 from django.http import HttpResponse, HttpResponseRedirect, HttpResponseBadRequest, FileResponse, JsonResponse
 from django.core.handlers.wsgi import WSGIRequest
 from django.shortcuts import get_object_or_404, render
@@ -15,14 +15,20 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
 from django.core.files.storage import default_storage
 from django.core.files.storage import FileSystemStorage
-
 from django.db.models import Max
-from .pdModel.deployModel import model_extraction, predict_models, data_checking
-from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.views import View
 from api.models import PatientSerializer
+
+from .models import PatientRecord, Patient, FileUploaded, Results, PatientQuestionaireRecord, Article
+
+from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.decorators import api_view
+
 
 
 print(settings.MEDIA_ROOT, settings.MEDIA_URL)
