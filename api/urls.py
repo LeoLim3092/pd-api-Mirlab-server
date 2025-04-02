@@ -1,6 +1,7 @@
 import imp
 from django.urls import include, path
 from django.contrib.auth.models import User
+from django.contrib import admin
 from django.views.generic import RedirectView
 from api.models import UserViewSet
 from api.models import PatientViewSet
@@ -13,6 +14,11 @@ router = routers.DefaultRouter()
 router.register(r'users', UserViewSet)
 router.register(r'patient', PatientViewSet)
 urlpatterns = router.urls
+
+urlpatterns = [
+    path('admin/', admin.site.urls),  # Admin interface
+    path('api/', include('api.urls')),  # Include the URLs from your 'api' app
+]
 
 urlpatterns += [
     path('login', views.Login.as_view()),

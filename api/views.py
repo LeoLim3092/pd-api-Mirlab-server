@@ -19,8 +19,8 @@ from django.db.models import Max
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.views import View
-from api.models import PatientSerializer
 
+from api.models import PatientSerializer
 from .models import PatientRecord, Patient, FileUploaded, Results, PatientQuestionaireRecord, Article
 
 from rest_framework.views import APIView
@@ -529,12 +529,12 @@ def check_file_time(file, current_time):
         print("File not found")
 
 
-
 def export_latest_patient_results(request):
     # Query the latest results for each patient
     latest_results = (
-        Results.objects.order_by('patientId', '-upload_time')
-        .distinct('patientId')  # Get the latest result for each patient
+        Results.objects.values('patientId')  # Group by patientId
+        .annotate(latest_upload=Max('upload_time'))  # Get the latest upload time for each patient
+        .select_related('patientId')  # Optimize related object fetching
     )
 
     # Create the HTTP response with CSV content type
@@ -546,14 +546,20 @@ def export_latest_patient_results(request):
     writer.writerow(['Patient ID', 'Patient Name', 'Upload Time', 'Gait Result', 'Voice Result', 'Hand Result', 'Multimodal Results'])
 
     for result in latest_results:
-        writer.writerow([
-            result.patientId.patientId,  # Patient ID
-            result.patient,             # Patient Name
-            result.upload_time,         # Upload Time
-            result.gait_result,         # Gait Result
-            result.voice_result,        # Voice Result
-            result.hand_result,         # Hand Result
-            result.multimodal_results   # Multimodal Results
-        ])
+        # Fetch the full result object for the latest upload time
+        full_result = Results.objects.filter(
+            patientId=result['patientId'], upload_time=result['latest_upload']
+        ).first()
+
+        if full_result:
+            writer.writerow([
+                full_result.patientId.patientId,  # Patient ID
+                full_result.patient,             # Patient Name
+                full_result.upload_time,         # Upload Time
+                full_result.gait_result,         # Gait Result
+                full_result.voice_result,        # Voice Result
+                full_result.hand_result,         # Hand Result
+                full_result.multimodal_results   # Multimodal Results
+            ])
 
     return response
