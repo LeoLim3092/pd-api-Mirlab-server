@@ -1,5 +1,9 @@
 import os
 import asyncio
+import json
+import datetime
+import csv
+
 from django.shortcuts import render, redirect
 from django.contrib.auth.models import User, Group
 from .models import PatientRecord, Patient, FileUploaded, Results, PatientQuestionaireRecord, Article
@@ -11,11 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
 from django.core.files.storage import default_storage
 from django.core.files.storage import FileSystemStorage
-from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.permissions import IsAuthenticated
-import json
-import datetime
+
 from django.db.models import Max
 from .pdModel.deployModel import model_extraction, predict_models, data_checking
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -524,3 +524,30 @@ def check_file_time(file, current_time):
 
 
 
+def export_latest_patient_results(request):
+    # Query the latest results for each patient
+    latest_results = (
+        Results.objects.order_by('patientId', '-upload_time')
+        .distinct('patientId')  # Get the latest result for each patient
+    )
+
+    # Create the HTTP response with CSV content type
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="latest_patient_results.csv"'
+
+    # Write CSV header and rows
+    writer = csv.writer(response)
+    writer.writerow(['Patient ID', 'Patient Name', 'Upload Time', 'Gait Result', 'Voice Result', 'Hand Result', 'Multimodal Results'])
+
+    for result in latest_results:
+        writer.writerow([
+            result.patientId.patientId,  # Patient ID
+            result.patient,             # Patient Name
+            result.upload_time,         # Upload Time
+            result.gait_result,         # Gait Result
+            result.voice_result,        # Voice Result
+            result.hand_result,         # Hand Result
+            result.multimodal_results   # Multimodal Results
+        ])
+
+    return response

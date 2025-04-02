@@ -30,5 +30,6 @@ urlpatterns += [
     path("create_new_user", views.CreateNewUser.as_view()),
     path("get_user_data", views.getUserData.as_view()),
     path("get_last_upload_data", views.getLastUploadData.as_view()),
-    path("check_recording", views.CheckRecording.as_view())
+    path("check_recording", views.CheckRecording.as_view()),
+    path('export-latest-results', views.export_latest_patient_results, name='export_latest_results'),
 ]
