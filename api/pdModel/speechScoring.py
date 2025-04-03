@@ -60,9 +60,10 @@ class SpeechScorer:
     def score(self, wav_path):
         """Run the full scoring process and clean up"""
         self.validate_text_file()
+        wav_path = urllib.parse.unquote(wav_path)  # <<< ADD THIS
         wav_16k = self.convert_audio(wav_path)
 
-        # Copy original audio to expected .wav location
+        # ⬇️ Copy original file to Kaldi expected name (e.g. temp_audio.wav)
         kaldi_expected_path = os.path.join(self.wav_dir, f"{self.utt_id}.wav")
         shutil.copyfile(wav_path, kaldi_expected_path)
 
