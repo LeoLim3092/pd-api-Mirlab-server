@@ -2,6 +2,8 @@ import os
 import subprocess
 import json
 import urllib.parse
+import shutil
+from pathlib import Path
 
 class SpeechScorer:
     def __init__(self, kaldi_root_dir="~/speech-scoring/kaldi-dnn-ali-gop/egs/gop-compute"):
@@ -9,28 +11,39 @@ class SpeechScorer:
         self.demo_sh = os.path.join(self.base_dir, "demo.sh")
         self.wav_dir = os.path.join(self.base_dir, "local/demo/source/ch")
         self.text_path = os.path.abspath("./speech_text.txt")
-        self.output_dir = os.path.join(self.base_dir, "local/demo/result/tdnnf/json")
         self.utt_id = "temp_audio"
+        self.output_dir = os.path.join(
+            self.base_dir, f"local/demo/web/exp/tdnnf/{self.utt_id}/json"
+        )
+        self.tmp_dir = os.path.join(self.base_dir, "local/demo/web/tmp")
+
         os.makedirs(self.wav_dir, exist_ok=True)
+        os.makedirs(self.tmp_dir, exist_ok=True)
 
     def convert_audio(self, input_wav_path):
         """Convert input WAV to Kaldi-compatible format (16kHz mono 16-bit)"""
-        input_wav_path = urllib.parse.unquote(input_wav_path)  # ← this decodes the %20 etc.
+        input_wav_path = urllib.parse.unquote(input_wav_path)
         converted_wav = os.path.join(self.wav_dir, f"{self.utt_id}_16k.wav")
         print(f"[1] Converting audio: {input_wav_path} → {converted_wav}")
-        subprocess.run(["sox", input_wav_path, "-r", "16000", "-c", "1", "-b", "16", converted_wav], check=True)
+        subprocess.run([
+            "sox", input_wav_path, "-r", "16000", "-c", "1", "-b", "16", converted_wav
+        ], check=True)
+
+        # Copy to expected tmp folder with correct naming
+        shutil.copy(converted_wav, os.path.join(self.tmp_dir, f"{self.utt_id}.wav"))
         return converted_wav
 
     def validate_text_file(self):
-        """Check if fixed text file exists"""
+        """Ensure speech_text.txt is copied into proper tmp folder"""
         if not os.path.exists(self.text_path):
             raise FileNotFoundError(f"Transcript file not found: {self.text_path}")
         print(f"[2] Using transcript file: {self.text_path}")
+        shutil.copy(self.text_path, os.path.join(self.tmp_dir, f"{self.utt_id}.txt"))
 
-    def run_demo_sh(self, wav_16k_path):
+    def run_demo_sh(self):
         """Run Kaldi's scoring pipeline using demo.sh"""
-        print(f"[3] Running demo.sh with {wav_16k_path}...")
-        subprocess.run([self.demo_sh, wav_16k_path, self.text_path], cwd=self.base_dir, check=True)
+        print(f"[3] Running demo.sh with utt_id={self.utt_id}, lang='ch'...")
+        subprocess.run([self.demo_sh, self.utt_id, "ch"], cwd=self.base_dir, check=True)
 
     def parse_result(self):
         """Parse and return the GOP score from JSON"""
@@ -48,8 +61,9 @@ class SpeechScorer:
         """Run the full scoring process and clean up"""
         self.validate_text_file()
         wav_16k = self.convert_audio(wav_path)
+
         try:
-            self.run_demo_sh(wav_16k)
+            self.run_demo_sh()
             scores = self.parse_result()
         finally:
             if os.path.exists(wav_16k):
