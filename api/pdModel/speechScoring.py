@@ -1,6 +1,7 @@
 import os
 import subprocess
 import json
+import urllib.parse
 
 class SpeechScorer:
     def __init__(self, kaldi_root_dir="~/speech-scoring/kaldi-dnn-ali-gop/egs/gop-compute"):
@@ -14,6 +15,7 @@ class SpeechScorer:
 
     def convert_audio(self, input_wav_path):
         """Convert input WAV to Kaldi-compatible format (16kHz mono 16-bit)"""
+        input_wav_path = urllib.parse.unquote(input_wav_path)  # ← this decodes the %20 etc.
         converted_wav = os.path.join(self.wav_dir, f"{self.utt_id}_16k.wav")
         print(f"[1] Converting audio: {input_wav_path} → {converted_wav}")
         subprocess.run(["sox", input_wav_path, "-r", "16000", "-c", "1", "-b", "16", converted_wav], check=True)
