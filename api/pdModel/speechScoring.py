@@ -62,6 +62,10 @@ class SpeechScorer:
         self.validate_text_file()
         wav_16k = self.convert_audio(wav_path)
 
+        # Copy original audio to expected .wav location
+        kaldi_expected_path = os.path.join(self.wav_dir, f"{self.utt_id}.wav")
+        shutil.copyfile(wav_path, kaldi_expected_path)
+
         try:
             self.run_demo_sh()
             scores = self.parse_result()
@@ -69,6 +73,9 @@ class SpeechScorer:
             if os.path.exists(wav_16k):
                 os.remove(wav_16k)
                 print(f"[🧹] Removed temporary file: {wav_16k}")
+            if os.path.exists(kaldi_expected_path):
+                os.remove(kaldi_expected_path)
+                print(f"[🧹] Removed temporary file: {kaldi_expected_path}")
 
         print("\n🎯 Pronunciation Scores (GOP):")
         for p in scores:
