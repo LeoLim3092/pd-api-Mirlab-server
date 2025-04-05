@@ -22,7 +22,7 @@ gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_l
 hand_features_name = ["right_finger_open_duration", 'right_finger_open_change', "right_finger_open_distance",
                       "left_finger_open_duration", 'left_finger_open_change', "left_finger_open_distance"]
 
-voice_feature_name = ['pause(%)', 'volume change', 'pitch change', 'Average pitch']
+voice_feature_name = ['reading_time' , 'score', 'pause(%)', 'volume change', 'pitch change', 'Average pitch']
 
 
 def extract_gait(gait_video_pth, out_dir):
@@ -89,7 +89,7 @@ def predict_models(all_features_pth, age, gender, out_dir):
 
     gait_result = deploy(np.array([gait_feature]), sfs_idx['gait_sfs_idx'], modal="gait", fold=10)
     hand_result = deploy(np.array([hand_feature]), sfs_idx['hand_sfs_idx'], modal="hand", fold=10)
-    voice_result = deploy(np.array([voice_feature]), _temp_voice_sfs_idx, modal="voice2", fold=10)
+    voice_result = deploy(np.array([voice_feature]), _temp_voice_sfs_idx, modal="voice", fold=10)
     weight = [4, 6, 5]
 
     all_result = {}

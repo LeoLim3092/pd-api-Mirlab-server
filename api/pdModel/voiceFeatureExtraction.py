@@ -3,6 +3,7 @@ import subprocess
 import soundfile as sf
 import os
 import pysptk
+from speechScoring import score_pronunciation
 
 
 def convert_to_wav(input_file):
@@ -292,7 +293,10 @@ def voice_features_extraction(voice_file):
     volume, pause, pause_percentage, volumn_change = audio_feature(wave_file)
     average_vol, pitch_change, average_pitch = pitch_feature(wave_file)
 
-    return [pause_percentage, volumn_change, pitch_change, average_pitch]
+    score = score_pronunciation(wave_file)
+    read_duration = calculate_duration(wave_file)
+
+    return [read_duration, score, pause_percentage, volumn_change, pitch_change, average_pitch]
 
 
 def calculate_average_volume(file_path):
