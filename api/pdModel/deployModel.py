@@ -127,7 +127,7 @@ def deploy(data, feature_idx_dt, modal="gait", fold=10):
         for i in range(fold):
 
             clf_pth = f'{save_file_dir}{i}_{model_name}.joblib'
-            print(print())
+            print(print(clf_pth))
             clf = joblib.load(clf_pth)
             f_idx = feature_idx_dt[model_name]
             predict_proba = clf.predict_proba(data[:, f_idx])
