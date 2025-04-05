@@ -536,8 +536,8 @@ class RerunAllPatientPredictModel(APIView):
 
 
 class RerunFromDatePatientPrediction(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    # authentication_classes = [JWTAuthentication]
+    # permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
         # Get the date from the request
