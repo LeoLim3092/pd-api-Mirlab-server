@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 MODEL_PATHS = "/home/pdapp/pd_api_server/api/pdModel/PD_pretrained_models/"
-TRAINED_MODELS_LS = ["C4.5 DT", "RF", "LogReg", "AdaBoost", "NB", "SVM"]  # remove KNN, "GBM", "LightGBM",
+TRAINED_MODELS_LS = [ "RF", "AdaBoost", "SVM"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB",
 
 gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_len_average', 'left_right_foot_len_max',
                      'left_turning_duration', 'left_turning_slope', 'right_turning_duration', 'right_turning_slope',

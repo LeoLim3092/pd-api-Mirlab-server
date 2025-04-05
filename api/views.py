@@ -650,9 +650,12 @@ def export_latest_patient_results(request):
         )
         print(f"Latest results: {latest_results}")  # Debug statement
 
+                # Get today's date in the format YYYYMMDD
+        today_date = datetime.datetime.now().strftime('%Y%m%d')
+
         # Create the HTTP response with CSV content type
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="latest_patient_results.csv"'
+        response['Content-Disposition'] = 'attachment; filename="{today_date}_results.csv"'
 
         # Write CSV header and rows
         writer = csv.writer(response)
