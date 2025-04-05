@@ -3,7 +3,7 @@ import subprocess
 import soundfile as sf
 import os
 import pysptk
-from speechScoring import score_pronunciation
+from .speechScoring import score_pronunciation
 
 
 def convert_to_wav(input_file):
