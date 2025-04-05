@@ -382,7 +382,15 @@ class PredictModel(APIView):
         r_hand_file = FileUploaded.objects.filter(patientId=p, file_type='right_hand').order_by('-upload_time').first()
         l_hand_file = FileUploaded.objects.filter(patientId=p, file_type='left_hand').order_by('-upload_time').first()
         gait_file = FileUploaded.objects.filter(patientId=p, file_type='gait').order_by('-upload_time').first()
-        sound_file = FileUploaded.objects.filter(patientId=p, file_type='sound').order_by('-upload_time').first()
+        
+        # Fetch the latest sound file that does not contain "freetalk" in the filename
+        sound_file = FileUploaded.objects.filter(
+            patientId=p, file_type='sound'
+        ).exclude(file_path__icontains='freetalk').order_by('-upload_time').first()
+
+        # Check if the required files are present
+        if not (r_hand_file and l_hand_file and gait_file and sound_file):
+            return JsonResponse({"error": "Missing required files"}, status=400)
 
         out_d = f'/mnt/pd_app/results/{name}/{current_time}/'
 
@@ -390,7 +398,6 @@ class PredictModel(APIView):
             os.makedirs(f'/mnt/pd_app/results/{name}/{current_time}/')
         else:
             os.makedirs(f'/mnt/pd_app/results/{name}/')
-
 
         gait_file_pth = f'{base_path}/walk/{gait_file.file_path}'
         l_hand_file_pth = f'{base_path}/gesture/{l_hand_file.file_path}'
