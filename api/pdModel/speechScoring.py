@@ -1,87 +1,51 @@
+import requests
 import os
-import subprocess
-import json
 import urllib.parse
-import shutil
-from pathlib import Path
 
-class SpeechScorer:
-    def __init__(self, kaldi_root_dir="~/speech-scoring/kaldi-dnn-ali-gop/egs/gop-compute"):
-        self.base_dir = os.path.expanduser(kaldi_root_dir)
-        self.demo_sh = os.path.join(self.base_dir, "demo.sh")
-        self.wav_dir = os.path.join(self.base_dir, "local/demo/source/ch")
-        self.text_path = os.path.abspath("./speech_text.txt")
-        self.utt_id = "temp_audio"
-        self.output_dir = os.path.join(
-            self.base_dir, f"local/demo/web/exp/tdnnf/{self.utt_id}/json"
-        )
-        self.tmp_dir = os.path.join(self.base_dir, "local/demo/web/tmp")
+FIXED_TRANSCRIPT = (
+    "有一回 北風和太陽正在爭論誰的能耐大 爭來爭去 就是分不出個高低來 "
+    "這會兒 來了個路人 他身上穿了件厚大衣 他們倆就說好了 "
+    "誰能先叫這個路人把他的厚大衣脫下來 就算誰比較有本事 "
+    "於是 北風就拚命地吹 怎料 他吹得越厲害 那個路人就把大衣包得越緊 "
+    "最後 北風沒辦法 只好放棄 過了一陣子 太陽出來了 "
+    "他火辣辣地曬了一下 那個路人就立刻把身上的厚大衣脫下來 "
+    "於是 北風只好認輸了 他們倆之間還是太陽的能耐大"
+)
 
-        os.makedirs(self.wav_dir, exist_ok=True)
-        os.makedirs(self.tmp_dir, exist_ok=True)
+def score_pronunciation(wav_path, server_url="http://localhost:8899"):
+    # Decode URL-encoded path
+    wav_path = urllib.parse.unquote(wav_path)
 
-    def convert_audio(self, input_wav_path):
-        """Convert input WAV to Kaldi-compatible format (16kHz mono 16-bit)"""
-        input_wav_path = urllib.parse.unquote(input_wav_path)
-        converted_wav = os.path.join(self.wav_dir, f"{self.utt_id}_16k.wav")
-        print(f"[1] Converting audio: {input_wav_path} → {converted_wav}")
-        subprocess.run([
-            "sox", input_wav_path, "-r", "16000", "-c", "1", "-b", "16", converted_wav
-        ], check=True)
+    if not os.path.isfile(wav_path):
+        raise FileNotFoundError(f"WAV file not found: {wav_path}")
 
-        # Copy to expected tmp folder with correct naming
-        shutil.copy(converted_wav, os.path.join(self.tmp_dir, f"{self.utt_id}.wav"))
-        return converted_wav
+    # POST audio and transcript to scoring server
+    response = requests.post(
+        f"{server_url}/scoring",
+        data={
+            'text': FIXED_TRANSCRIPT,
+            'filters': 'utterance,cm_word_text,cm_word_timberScore'
+        },
+        files={
+            'data': open(wav_path, 'rb')
+        }
+    )
 
-    def validate_text_file(self):
-        """Ensure speech_text.txt is copied into proper tmp folder"""
-        if not os.path.exists(self.text_path):
-            raise FileNotFoundError(f"Transcript file not found: {self.text_path}")
-        print(f"[2] Using transcript file: {self.text_path}")
-        shutil.copy(self.text_path, os.path.join(self.tmp_dir, f"{self.utt_id}.txt"))
+    if response.status_code != 200:
+        raise Exception(f"Server error: {response.status_code} - {response.text}")
 
-    def run_demo_sh(self):
-        """Run Kaldi's scoring pipeline using demo.sh"""
-        print(f"[3] Running demo.sh with utt_id={self.utt_id}, lang='ch'...")
-        subprocess.run([self.demo_sh, self.utt_id, "ch"], cwd=self.base_dir, check=True)
+    result = response.json()
+    uid = result.get('uid')
+    if not uid:
+        raise Exception("No UID returned from scoring server.")
 
-    def parse_result(self):
-        """Parse and return the GOP score from JSON"""
-        json_file = os.path.join(self.output_dir, f"{self.utt_id}.json")
-        print(f"[4] Reading result JSON: {json_file}")
-        if not os.path.exists(json_file):
-            raise FileNotFoundError("Scoring output JSON not found!")
+    # Fetch the score JSON
+    json_url = f"{server_url}/score_json?json_name={uid}.json"
+    json_response = requests.get(json_url)
 
-        with open(json_file, "r", encoding="utf-8") as f:
-            result = json.load(f)
+    if json_response.status_code != 200:
+        raise Exception(f"Could not fetch score JSON: {json_response.status_code}")
+        
+    results = json_response.json()
 
-        return result["phones"]
-
-    def score(self, wav_path):
-        """Run the full scoring process and clean up"""
-
-        # ⬇️ Decode URL-encoded path first
-        wav_path = urllib.parse.unquote(wav_path)
-
-        self.validate_text_file()
-        wav_16k = self.convert_audio(wav_path)
-
-        # ⬇️ Kaldi expects a file named exactly temp_audio.wav
-        kaldi_expected_path = os.path.join(self.wav_dir, f"{self.utt_id}.wav")
-        shutil.copyfile(wav_path, kaldi_expected_path)
-
-        try:
-            self.run_demo_sh()
-            scores = self.parse_result()
-        finally:
-            if os.path.exists(wav_16k):
-                os.remove(wav_16k)
-                print(f"[🧹] Removed temporary file: {wav_16k}")
-            if os.path.exists(kaldi_expected_path):
-                os.remove(kaldi_expected_path)
-                print(f"[🧹] Removed temporary file: {kaldi_expected_path}")
-
-        print("\n🎯 Pronunciation Scores (GOP):")
-        for p in scores:
-            print(f"{p['phone']:>10}: GOP = {p['gop']:.3f}")
-        return scores
+    return results["cm"]["score"]
