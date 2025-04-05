@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 MODEL_PATHS = "/home/pdapp/pd_api_server/api/pdModel/PD_pretrained_models/"
-TRAINED_MODELS_LS = [ "RF", "AdaBoost", "SVM"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB",
+TRAINED_MODELS_LS = [ "SVM"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB", "RF", "AdaBoost",
 
 gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_len_average', 'left_right_foot_len_max',
                      'left_turning_duration', 'left_turning_slope', 'right_turning_duration', 'right_turning_slope',
@@ -127,7 +127,6 @@ def deploy(data, feature_idx_dt, modal="gait", fold=10):
         for i in range(fold):
             clf_pth = f'{save_file_dir}{i}_{model_name}.joblib'
             clf = joblib.load(clf_pth)
-            print(clf.n_features_in_)
             f_idx = feature_idx_dt[model_name]
             predict_proba = clf.predict_proba(data[:, f_idx])
             proba_ls.append(predict_proba)
