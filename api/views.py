@@ -388,8 +388,6 @@ class PredictModel(APIView):
             patientId=p, file_type='sound'
         ).exclude(file_path__icontains='freetalk').order_by('-upload_time').first()
 
-        print(r_hand_file, l_hand_file, gait_file, sound_file)
-
         # Check if the required files are present
         if not (r_hand_file and l_hand_file and gait_file and sound_file):
             return JsonResponse({"error": "Missing required files"}, status=400)
@@ -405,6 +403,8 @@ class PredictModel(APIView):
         l_hand_file_pth = f'{base_path}/gesture/{l_hand_file.file_path}'
         r_hand_file_pth = f'{base_path}/gesture/{r_hand_file.file_path}'
         sound_file_pth = f'{base_path}/sound/{sound_file.file_path}'
+
+        print(gait_file_pth, l_hand_file_pth, r_hand_file_pth, sound_file_pth)
 
         try:
             model_extraction(gait_file_pth, l_hand_file_pth, r_hand_file_pth, sound_file_pth, out_d)
