@@ -9,6 +9,7 @@ from .models import Patient, Article, PatientRecord, FileUploaded, Results, Pati
 
 
 class PatientAdmin(admin.ModelAdmin):
+    change_list_template = "admin/patient_changelist.html"  # Custom template for the list view
 
     def get_urls(self):
         urls = super().get_urls()
