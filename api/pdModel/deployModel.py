@@ -69,7 +69,8 @@ def model_extraction(gait_video_pth, left_video_path, right_video_path, voice_pa
 
 def predict_models(all_features_pth, age, gender, out_dir):
     sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
-    _temp_voice_sfs_idx = joblib.load(f'/home/pdapp/voice_noscore_sfs.txt')
+    # _temp_voice_sfs_idx = joblib.load(f'/home/pdapp/voice_noscore_sfs.txt')
+
     gait_len = len(gait_feature_name)
     hand_len = len(hand_features_name)
     voice_len = len(voice_feature_name)
@@ -89,7 +90,7 @@ def predict_models(all_features_pth, age, gender, out_dir):
 
     gait_result = deploy(np.array([gait_feature]), sfs_idx['gait_sfs_idx'], modal="gait", fold=10)
     hand_result = deploy(np.array([hand_feature]), sfs_idx['hand_sfs_idx'], modal="hand", fold=10)
-    voice_result = deploy(np.array([voice_feature]), _temp_voice_sfs_idx, modal="voice", fold=10)
+    voice_result = deploy(np.array([voice_feature]), sfs_idx['voice_sfs_idx'], modal="voice", fold=10)
     weight = [4, 6, 5]
 
     all_result = {}
