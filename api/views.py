@@ -490,6 +490,107 @@ class getUserData(View):
             return HttpResponseBadRequest("Username doesn't exist!", status=401)
 
 
+class RerunAllPatientPredictModel(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: WSGIRequest):
+        # Fetch all patients
+        patients = Patient.objects.all()
+        failed_patients = []
+
+        for patient in patients:
+            try:
+                # Create a mock request for the PredictModel class
+                mock_request = WSGIRequest({
+                    'REQUEST_METHOD': 'POST',
+                    'wsgi.input': None,
+                })
+                mock_request.POST = {
+                    'pid': patient.patientId
+                }
+
+                # Call the PredictModel class
+                predict_model_view = PredictModel()
+                response = predict_model_view.post(mock_request)
+
+                # Check if the response indicates success
+                if response.status_code != 200:
+                    failed_patients.append({
+                        "patientId": patient.patientId,
+                        "reason": f"PredictModel returned status {response.status_code}"
+                    })
+
+            except Exception as e:
+                # Log the failure for this patient
+                failed_patients.append({
+                    "patientId": patient.patientId,
+                    "reason": str(e)
+                })
+
+        # Return a summary of the operation
+        return JsonResponse({
+            "message": "Rerun completed",
+            "failed_patients": failed_patients
+        })
+
+
+class RerunFromDatePatientPrediction(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: WSGIRequest):
+        # Get the date from the request
+        date_str = request.POST.get('date', None)
+        if not date_str:
+            return JsonResponse({"error": "Date is required in the format YYYY-MM-DD"}, status=400)
+
+        try:
+            # Parse the date
+            from_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+        # Fetch patients created on or after the given date
+        patients = Patient.objects.filter(created_at__date__gte=from_date)
+        failed_patients = []
+
+        for patient in patients:
+            try:
+                # Create a mock request for the PredictModel class
+                mock_request = WSGIRequest({
+                    'REQUEST_METHOD': 'POST',
+                    'wsgi.input': None,
+                })
+                mock_request.POST = {
+                    'pid': patient.patientId
+                }
+
+                # Call the PredictModel class
+                predict_model_view = PredictModel()
+                response = predict_model_view.post(mock_request)
+
+                # Check if the response indicates success
+                if response.status_code != 200:
+                    failed_patients.append({
+                        "patientId": patient.patientId,
+                        "reason": f"PredictModel returned status {response.status_code}"
+                    })
+
+            except Exception as e:
+                # Log the failure for this patient
+                failed_patients.append({
+                    "patientId": patient.patientId,
+                    "reason": str(e)
+                })
+
+        # Return a summary of the operation
+        return JsonResponse({
+            "message": "Rerun completed",
+            "failed_patients": failed_patients
+        })
+
+   
 class getLastUploadData(APIView):
 
     def post(self, request):
