@@ -655,7 +655,7 @@ def export_latest_patient_results(request):
 
         # Create the HTTP response with CSV content type
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="{today_date}_results.csv"'
+        response['Content-Disposition'] = f'attachment; filename="{today_date}_results.csv"'
 
         # Write CSV header and rows
         writer = csv.writer(response)
