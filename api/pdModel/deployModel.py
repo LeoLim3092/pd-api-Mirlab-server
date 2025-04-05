@@ -120,12 +120,14 @@ def predict_models(all_features_pth, age, gender, out_dir):
 def deploy(data, feature_idx_dt, modal="gait", fold=10):
     save_file_dir = f"{MODEL_PATHS}Save_model_{modal}/"
     proba_out_dt = {}
-
+    
     for model_name in TRAINED_MODELS_LS:
         proba_ls = []
 
         for i in range(fold):
+
             clf_pth = f'{save_file_dir}{i}_{model_name}.joblib'
+            print(print())
             clf = joblib.load(clf_pth)
             f_idx = feature_idx_dt[model_name]
             predict_proba = clf.predict_proba(data[:, f_idx])
