@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.http import HttpResponseRedirect
-from django.urls import path
+from django.urls import path, reverse
 from django.contrib import messages
 from rest_framework_simplejwt.tokens import AccessToken
 import requests
@@ -39,7 +39,10 @@ class PatientAdmin(admin.ModelAdmin):
         except Exception as e:
             messages.error(request, f"⚠️ Exception occurred: {str(e)}")
 
-        return HttpResponseRedirect("../")  # Redirect back to the patient list
+
+        # Redirect to changelist view safely
+        changelist_url = reverse('admin:api_patient_changelist')
+        return HttpResponseRedirect(changelist_url)
 
 
 # Register models in the admin site
