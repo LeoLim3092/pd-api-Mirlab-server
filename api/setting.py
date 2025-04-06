@@ -1,6 +1,7 @@
 MEDIA_URL = '/mnt/pd_app/results/'
 DEBUG = True
 APPEND_SLASH = True
+BASE_DIR = '/home/pdapp/pd_api_server'
 
 TEMPLATES = [
     {
