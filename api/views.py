@@ -13,6 +13,7 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate
+from django.contrib.admin.views.decorators import staff_member_required
 from django.core.files.storage import default_storage
 from django.core.files.storage import FileSystemStorage
 from django.db.models import Max
@@ -638,7 +639,7 @@ def check_file_time(file, current_time):
     else:
         print("File not found")
 
-
+@staff_member_required
 def export_latest_patient_results(request):
     print("Function called")  # Debug statement
 
