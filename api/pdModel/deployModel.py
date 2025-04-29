@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 MODEL_PATHS = "/home/pdapp/pd_api_server/api/pdModel/PD_pretrained_models/"
-TRAINED_MODELS_LS = [ "SVM"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB", "RF", "AdaBoost",
+TRAINED_MODELS_LS = ["RF"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB", "RF", "AdaBoost",
 
 gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_len_average', 'left_right_foot_len_max',
                      'left_turning_duration', 'left_turning_slope', 'right_turning_duration', 'right_turning_slope',
@@ -74,6 +74,7 @@ def predict_models(all_features_pth, age, gender, out_dir):
     gait_len = len(gait_feature_name)
     hand_len = len(hand_features_name)
     voice_len = len(voice_feature_name)
+    
     gait_result = {}
     hand_result = {}
     voice_result = {}
@@ -91,6 +92,7 @@ def predict_models(all_features_pth, age, gender, out_dir):
     gait_result = deploy(np.array([gait_feature]), sfs_idx['gait_sfs_idx'], modal="gait", fold=10)
     hand_result = deploy(np.array([hand_feature]), sfs_idx['hand_sfs_idx'], modal="hand", fold=10)
     voice_result = deploy(np.array([voice_feature]), sfs_idx['voice_sfs_idx'], modal="voice", fold=10)
+    
     weight = [4, 6, 5]
 
     all_result = {}
@@ -100,8 +102,9 @@ def predict_models(all_features_pth, age, gender, out_dir):
                                              [voice_result[k]]]), weights=weight, axis=0)[0]
 
     # plot results
-    results = np.array([gait_result["SVM"][0], hand_result["SVM"][0], voice_result["SVM"][0],
-                        all_result["SVM"][0]]) * 100
+    results = np.array([gait_result["RF"][0], hand_result["RF"][0], voice_result["RF"][0],
+                        all_result["RF"][0]]) * 100
+    
     plt.bar(["Gait", "Hand", "Voice", "All"], results)
 
     for i, r in enumerate(results):
