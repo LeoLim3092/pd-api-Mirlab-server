@@ -1,0 +1,12 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Backend Functions</h1>
+
+<ul style="font-size: 18px;">
+    <li><a href="{% url 'admin:rerun-predictions' %}">🚀 Rerun All Predictions</a></li>
+    <li><a href="{% url 'admin:download-data' %}">⬇️ Download Data</a></li>
+    <li><a href="{% url 'admin:view-logs' %}">📝 View Logs</a></li>
+</ul>
+
+{% endblock %}

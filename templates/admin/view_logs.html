@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Server Logs 📜</h1>
+
+<pre style="background-color: black; color: white; padding: 15px; overflow: scroll; height: 600px;">
+{% for line in log_content %}
+{{ line }}
+{% endfor %}
+</pre>
+
+<br>
+<a class="button" href="{% url 'admin:backend-functions' %}">⬅️ Back to Backend Functions</a>
+{% endblock %}

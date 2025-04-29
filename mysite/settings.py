@@ -149,3 +149,34 @@ SIMPLE_JWT = {
 }
 
 DEFAULT_CHARSET = 'utf-8'
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False, 
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'DEBUG',  # Save DEBUG and above
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'django.log'),  # logs saved to BASE_DIR/django.log
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file'],
+            'level': 'DEBUG',   # Collect everything: DEBUG, INFO, WARNING, ERROR, CRITICAL
+            'propagate': True,
+        },
+    },
+}

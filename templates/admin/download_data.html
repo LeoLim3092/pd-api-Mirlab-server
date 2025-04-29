@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Download Data Results 📥</h1>
+
+<p>Showing files for <strong>{{ data_type }}</strong> from <strong>{{ from_date }}</strong> to <strong>{{ to_date }}</strong>.</p>
+
+{% if matched_files %}
+<ul>
+    {% for file in matched_files %}
+    <li>
+        <a href="{{ file.file_path }}" download>{{ file.patient }} - {{ file.file_type }}</a>
+        (Uploaded: {{ file.upload_time }})
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No files found for the selected date range and type.</p>
+{% endif %}
+
+<br>
+<a class="button" href="{% url 'admin:download-data' %}">⬅️ Back to Download Form</a>
+<a class="button" href="{% url 'admin:backend-functions' %}">🏠 Back to Backend Functions</a>
+{% endblock %}
+

@@ -10,3 +10,4 @@ sport-record-env/
 *__pycache__*
 .venv/
 media/
+.vs/
