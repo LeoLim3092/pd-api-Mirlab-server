@@ -1,0 +1,12 @@
+{% extends "admin/index.html" %}
+
+{% block content %}
+{{ block.super }}
+
+<div class="app-custom">
+    <h2>Backend Tools</h2>
+    <ul>
+        <li><a href="{% url 'admin:backend-functions' %}">🧠 Backend Functions</a></li>
+    </ul>
+</div>
+{% endblock %}

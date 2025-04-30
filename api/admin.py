@@ -12,6 +12,10 @@ import io
 import os
 from .models import Patient, Article, PatientRecord, FileUploaded, Results, PatientQuestionaireRecord
 import logging
+from django.contrib.auth.models import Group, User
+from rest_framework.authtoken.models import Token
+from django.utils.html import format_html
+
 
 logger = logging.getLogger('django')
 
@@ -199,3 +203,7 @@ admin_site.register(PatientRecord)
 admin_site.register(FileUploaded)
 admin_site.register(Results)
 admin_site.register(PatientQuestionaireRecord)
+
+admin_site.register(Group)
+admin_site.register(User)
+admin_site.register(Token)
