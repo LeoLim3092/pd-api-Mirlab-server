@@ -83,7 +83,7 @@ class CustomAdminSite(admin.AdminSite):
 
     def rerun_single_patient(self, request, patient_id):
         try:
-            url = f"http://localhost:10409/api/predict_without_model_extraction"
+            url = "http://140.112.91.59:10409/api/predict_without_model_extraction"
 
             token = str(AccessToken.for_user(request.user))
             headers = {
