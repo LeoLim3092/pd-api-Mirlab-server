@@ -26,8 +26,10 @@ FILE_TYPE_STORAGE_PATHS = {
     'gait': '/mnt/pd_app/walk',
     'right_hand': '/mnt/pd_app/gesture',
     'left_hand': '/mnt/pd_app/gesture',
-    'spiral_right': '/mnt/pd_app/paint/spiral/right',  # assuming saving under right first
-    'spiral_left': '/mnt/pd_app/paint/spiral/left',  # assuming saving under right first
+    'spiral_paint':  [
+        '/mnt/pd_app/paint/spiral/right',
+        '/mnt/pd_app/paint/spiral/left'
+    ],
     'three': '/mnt/pd_app/paint/three/right',
     'questionnaires': '/mnt/pd_app/results',  # or if you save JSON here
 }
@@ -121,19 +123,25 @@ class CustomAdminSite(admin.AdminSite):
                     return HttpResponseRedirect(reverse('admin:download-data'))
 
                 zip_buffer = io.BytesIO()
+                
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    base_folder = FILE_TYPE_STORAGE_PATHS.get(data_type)
+                    base_folders = FILE_TYPE_STORAGE_PATHS.get(data_type, [])
 
-                    if base_folder is None:
+                    if not base_folders:
                         messages.error(request, f"⚠️ Unknown data type: {data_type}")
                         return HttpResponseRedirect(reverse('admin:download-data'))
 
                     for file_obj in matched_files:
-                        # Full physical path
-                        file_full_path = os.path.join(base_folder, file_obj.file_path)
+                        found = False
+                        for base_folder in base_folders:
+                            file_full_path = os.path.join(base_folder, file_obj.file_path)
+                            if os.path.exists(file_full_path):
+                                zip_file.write(file_full_path, arcname=os.path.basename(file_full_path))
+                                found = True
+                                break
 
-                        if os.path.exists(file_full_path):
-                            zip_file.write(file_full_path, arcname=os.path.basename(file_full_path))
+                        if not found:
+                            logger.warning(f"⚠️ File not found for: {file_obj.file_path}")
 
                 zip_buffer.seek(0)
 
