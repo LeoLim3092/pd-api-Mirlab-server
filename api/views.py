@@ -364,7 +364,36 @@ class CheckRecording(APIView):
         except:
             error_message = "Failed to process data"
             return Response({"error": error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 
+class PredictWithoutModelExtraction(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request: WSGIRequest):
+        
+        pid = request.POST.get('pid') or request.data.get('pid')
+        if not pid:
+            return HttpResponseBadRequest("Missing 'pid'")
+        
+        p = Patient.objects.get(patientId=int(pid))
+        age = p.age
+        gender = p.gender
+        name = p.name
+        current_time = datetime.datetime.now().strftime(format)
+        
+        out_dir = f'/mnt/pd_app/results/{name}/'
+        lastest_extracted_npy = get_latest_folder_by_creation_time(out_dir) + "/" + "all_feature.npy"
+        try:
+            gait_result, hand_result, voice_results, all_results = predict_models(lastest_extracted_npy, age, gender)
+            r = Results(patientId=p, patient=name, gait_result=gait_result, voice_result=voice_results,
+                        hand_result=hand_result, multimodal_results=all_results, upload_time=current_time)
+            r.save()
+            return HttpResponse()
+        except:
+            error_message = "Failed to process data"
+            return Response({"error": error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 
 class PredictModel(APIView):
     authentication_classes = [JWTAuthentication]
@@ -512,7 +541,7 @@ class RerunAllPatientPredictModel(APIView):
                 }
 
                 # Call the PredictModel class
-                predict_model_view = PredictModel()
+                predict_model_view = PredictWithoutModelExtraction()
                 response = predict_model_view.post(mock_request)
 
                 # Check if the response indicates success
@@ -638,6 +667,17 @@ def check_file_time(file, current_time):
             print("Latest hand file was not uploaded within the last hour! Old data was used!")
     else:
         print("File not found")
+        
+def get_latest_folder_by_creation_time(path):
+    # List all subdirectories
+    folders = [os.path.join(path, d) for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
+
+    if not folders:
+        return None
+
+    # Get the folder with the most recent creation time
+    latest_folder = max(folders, key=os.path.getctime)
+    return latest_folder
 
 @staff_member_required
 def export_latest_patient_results(request):

@@ -43,6 +43,7 @@ class CustomAdminSite(admin.AdminSite):
             path('backend-functions/rerun-predictions/', self.admin_view(self.rerun_predictions), name="rerun-predictions"),
             path('backend-functions/download-data/', self.admin_view(self.download_data_view), name="download-data"),
             path('backend-functions/view-logs/', self.admin_view(self.view_logs_view), name="view-logs"),
+            path('api/patient/<int:patient_id>/rerun/', self.admin_view(self.rerun_single_patient), name="rerun-patient"),
         
             # (you can add more backend function URLs here)
         ]
@@ -73,6 +74,30 @@ class CustomAdminSite(admin.AdminSite):
             self.message_user(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
 
         return HttpResponseRedirect(reverse('admin:backend-functions'))
+    
+
+    def rerun_single_patient(self, request, patient_id):
+        try:
+            from api.views import PredictWithoutModelExtraction
+            from rest_framework.request import Request
+            from rest_framework.test import APIRequestFactory
+
+            factory = APIRequestFactory()
+            post_request = factory.post('', {'pid': str(patient_id)})
+            post_request.user = request.user
+
+            view = PredictWithoutModelExtraction.as_view()
+            response = view(post_request)
+
+            if response.status_code == 200:
+                self.message_user(request, f"✅ Prediction rerun for patient {patient_id}.")
+            else:
+                self.message_user(request, f"❌ Prediction failed. Status: {response.status_code}", level='ERROR')
+        except Exception as e:
+            self.message_user(request, f"❌ Error running prediction: {e}", level='ERROR')
+
+        return HttpResponseRedirect(reverse('admin:api_patient_changelist'))
+
     
     def download_data_view(self, request):
         if request.method == 'POST':
@@ -160,8 +185,13 @@ admin_site = CustomAdminSite(name='custom_admin')
 
 @admin.register(Patient, site=admin_site)
 class PatientAdmin(admin.ModelAdmin):
-    # You can add customizations for Patient admin here if needed
-    list_display = ('id', 'name')  # Example, change fields as needed
+    list_display = ('patientId', 'name', 'rerun_button')
+
+    def rerun_button(self, obj):
+        url = reverse('admin:rerun-patient', args=[obj.patientId])
+        return format_html('<a class="button" href="{}">Rerun Prediction</a>', url)
+
+    rerun_button.short_description = 'Actions'
 
 # Register other models to the custom admin site
 admin_site.register(Article)

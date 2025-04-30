@@ -65,9 +65,54 @@ def model_extraction(gait_video_pth, left_video_path, right_video_path, voice_pa
     all_features = gait_feature + hand_feature + voice_feature
     np.save(f'{out_dir}all_feature.npy', all_features)
     print(f"save! \n {all_features}")
+    
+
+def predict_sound(all_features_pth, age, gender, out_dir):
+    sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
+    voice_len = len(voice_feature_name)
+    voice_result = {}
+    
+    for k in TRAINED_MODELS_LS:
+        voice_result[k] = [0, 0]
+
+    data = np.load(all_features_pth)
+    voice_feature = np.concatenate([np.array([age, gender]), data[-voice_len:]])
+    voice_result = deploy(np.array([voice_feature]), sfs_idx['voice_sfs_idx'], modal="voice", fold=10)
+
+    return voice_result
 
 
-def predict_models(all_features_pth, age, gender, out_dir):
+def predict_gait(all_features_pth, age, gender, out_dir):
+    sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
+    gait_len = len(gait_feature_name) 
+    gait_result = {}
+    
+    for k in TRAINED_MODELS_LS:
+        gait_result[k] = [0, 0]
+
+    data = np.load(all_features_pth)
+    gait_feature = np.concatenate([np.array([age, gender]), data[:gait_len]])
+    gait_result = deploy(np.array([gait_feature]), sfs_idx['gait_sfs_idx'], modal="gait", fold=10)
+
+    return gait_result
+
+def predict_hand(all_features_pth, age, gender, out_dir):
+    sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
+    gait_len = len(gait_feature_name)
+    hand_len = len(hand_features_name)
+    hand_result = {}
+    
+    for k in TRAINED_MODELS_LS:
+        hand_result[k] = [0, 0]
+
+    data = np.load(all_features_pth)
+    hand_feature = np.concatenate([np.array([age, gender]), data[gait_len:gait_len + hand_len]])
+    hand_result = deploy(np.array([hand_feature]), sfs_idx['hand_sfs_idx'], modal="hand", fold=10)
+
+    return hand_result
+
+
+def predict_models(all_features_pth, age, gender, out_dir=""):
     sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
     # _temp_voice_sfs_idx = joblib.load(f'/home/pdapp/voice_noscore_sfs.txt')
 
@@ -100,22 +145,24 @@ def predict_models(all_features_pth, age, gender, out_dir):
     for k in TRAINED_MODELS_LS:
         all_result[k] = np.average(np.array([[gait_result[k]], [hand_result[k]],
                                              [voice_result[k]]]), weights=weight, axis=0)[0]
+        
+    if out_dir:
 
-    # plot results
-    results = np.array([gait_result["RF"][0], hand_result["RF"][0], voice_result["RF"][0],
-                        all_result["RF"][0]]) * 100
+        # plot results
+        results = np.array([gait_result["RF"][0], hand_result["RF"][0], voice_result["RF"][0],
+                            all_result["RF"][0]]) * 100
     
-    plt.bar(["Gait", "Hand", "Voice", "All"], results)
+        plt.bar(["Gait", "Hand", "Voice", "All"], results)
 
-    for i, r in enumerate(results):
-        plt.text(i - 0.2, 105, f"{r:.2f}%")
+        for i, r in enumerate(results):
+            plt.text(i - 0.2, 105, f"{r:.2f}%")
 
-    for i, s in enumerate(["Gait", "Hand", "Voice", "All"]):
-        plt.text(i - 0.2, 115, f"{s}")
+        for i, s in enumerate(["Gait", "Hand", "Voice", "All"]):
+            plt.text(i - 0.2, 115, f"{s}")
 
-    plt.ylim([0, 120])
-    plt.axis("off")
-    plt.savefig(f"{out_dir}result.png")
+        plt.ylim([0, 120])
+        plt.axis("off")
+        plt.savefig(f"{out_dir}result.png")
 
     return results
 
