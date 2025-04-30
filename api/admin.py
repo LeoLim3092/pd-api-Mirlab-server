@@ -112,41 +112,36 @@ class CustomAdminSite(admin.AdminSite):
                 to_date = form.cleaned_data['to_date']
                 data_type = form.cleaned_data['data_type']
 
-                matched_files = FileUploaded.objects.filter(
-                    upload_time__date__gte=from_date,
-                    upload_time__date__lte=to_date,
-                    file_type=data_type
-                )
+                base_folders = FILE_TYPE_STORAGE_PATHS.get(data_type, [])
 
-                if not matched_files.exists():
-                    messages.error(request, "⚠️ No files found for the selected range and type.")
+                if not base_folders:
+                    messages.error(request, f"⚠️ Unknown data type: {data_type}")
                     return HttpResponseRedirect(reverse('admin:download-data'))
 
+                # Convert date to datetime range
+                from_ts = datetime.datetime.combine(from_date, datetime.time.min).timestamp()
+                to_ts = datetime.datetime.combine(to_date, datetime.time.max).timestamp()
+
                 zip_buffer = io.BytesIO()
-                
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    base_folders = FILE_TYPE_STORAGE_PATHS.get(data_type, [])
+                    for folder in base_folders:
+                        if not os.path.exists(folder):
+                            continue
 
-                    if not base_folders:
-                        messages.error(request, f"⚠️ Unknown data type: {data_type}")
-                        return HttpResponseRedirect(reverse('admin:download-data'))
-
-                    for file_obj in matched_files:
-                        found = False
-                        for base_folder in base_folders:
-                            file_full_path = os.path.join(base_folder, file_obj.file_path)
-                            if os.path.exists(file_full_path):
-                                zip_file.write(file_full_path, arcname=os.path.basename(file_full_path))
-                                found = True
-                                break
-
-                        if not found:
-                            logger.warning(f"⚠️ File not found for: {file_obj.file_path}")
+                        for root, _, files in os.walk(folder):
+                            for file in files:
+                                full_path = os.path.join(root, file)
+                                try:
+                                    file_ctime = os.path.getctime(full_path)
+                                    if from_ts <= file_ctime <= to_ts:
+                                        arcname = os.path.relpath(full_path, folder)
+                                        zip_file.write(full_path, arcname=arcname)
+                                except Exception as e:
+                                    logger.warning(f"Failed to process file {full_path}: {e}")
 
                 zip_buffer.seek(0)
-
-                response = FileResponse(zip_buffer, as_attachment=True, filename=f"{data_type}_files_{from_date}_to_{to_date}.zip")
-                return response
+                filename = f"{data_type}_files_{from_date}_to_{to_date}.zip"
+                return FileResponse(zip_buffer, as_attachment=True, filename=filename)
 
         else:
             form = DownloadDataForm()
@@ -157,6 +152,7 @@ class CustomAdminSite(admin.AdminSite):
             form=form
         )
         return TemplateResponse(request, "admin/download_data.html", context)
+
 
     def view_logs_view(self, request):
         log_file_path = os.path.join(settings.BASE_DIR, 'django.log')
