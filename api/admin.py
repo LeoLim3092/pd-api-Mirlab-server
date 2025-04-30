@@ -71,11 +71,11 @@ class CustomAdminSite(admin.AdminSite):
 
             response = requests.post(url, headers=headers)
             if response.status_code == 200:
-                self.message_user(request, "✅ Rerun completed successfully.", level='SUCCESS')
+                messages.success(request, "✅ Rerun completed successfully.", level='SUCCESS')
             else:
-                self.message_user(request, f"❌ Failed with status code: {response.status_code}", level='ERROR')
+                messages.error(request, f"❌ Failed with status code: {response.status_code}", level='ERROR')
         except Exception as e:
-            self.message_user(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
+           messages.error(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
 
         return HttpResponseRedirect(reverse('admin:backend-functions'))
     
@@ -83,7 +83,6 @@ class CustomAdminSite(admin.AdminSite):
     def rerun_single_patient(self, request, patient_id):
         try:
             from api.views import PredictWithoutModelExtraction
-            from rest_framework.request import Request
             from rest_framework.test import APIRequestFactory
 
             factory = APIRequestFactory()
@@ -94,11 +93,11 @@ class CustomAdminSite(admin.AdminSite):
             response = view(post_request)
 
             if response.status_code == 200:
-                self.message_user(request, f"✅ Prediction rerun for patient {patient_id}.")
+                messages.success(request, f"✅ Prediction rerun for patient {patient_id}.")
             else:
-                self.message_user(request, f"❌ Prediction failed. Status: {response.status_code}", level='ERROR')
+                messages.error(request, f"❌ Prediction failed. Status: {response.status_code}")
         except Exception as e:
-            self.message_user(request, f"❌ Error running prediction: {e}", level='ERROR')
+            messages.error(request, f"❌ Error running prediction: {e}")
 
         return HttpResponseRedirect(reverse('admin:api_patient_changelist'))
 
