@@ -17,6 +17,7 @@ from rest_framework.authtoken.models import Token
 from django.utils.html import format_html
 
 
+
 logger = logging.getLogger('django')
 
 # Mapping between file_type and base folder
@@ -82,15 +83,14 @@ class CustomAdminSite(admin.AdminSite):
 
     def rerun_single_patient(self, request, patient_id):
         try:
-            from api.views import PredictWithoutModelExtraction
-            from rest_framework.test import APIRequestFactory
+            url = f"http://localhost:10409/api/predict_without_model_extraction"
 
-            factory = APIRequestFactory()
-            post_request = factory.post('', {'pid': str(patient_id)})
-            post_request.user = request.user
+            token = str(AccessToken.for_user(request.user))
+            headers = {
+                "Authorization": f"Bearer {token}"
+            }
 
-            view = PredictWithoutModelExtraction.as_view()
-            response = view(post_request)
+            response = requests.post(url, data={"pid": patient_id}, headers=headers)
 
             if response.status_code == 200:
                 messages.success(request, f"✅ Prediction rerun for patient {patient_id}.")
