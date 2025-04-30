@@ -112,36 +112,33 @@ class CustomAdminSite(admin.AdminSite):
                 to_date = form.cleaned_data['to_date']
                 data_type = form.cleaned_data['data_type']
 
-                base_folders = FILE_TYPE_STORAGE_PATHS.get(data_type, [])
-
-                if not base_folders:
+                base_dirs = FILE_TYPE_STORAGE_PATHS.get(data_type, [])
+                if not base_dirs:
                     messages.error(request, f"⚠️ Unknown data type: {data_type}")
-                    return HttpResponseRedirect(reverse('admin:download-data'))
+                    return redirect('admin:download-data')
 
-                # Convert date to datetime range
+                if isinstance(base_dirs, str):
+                    base_dirs = [base_dirs]
+
                 from_ts = datetime.datetime.combine(from_date, datetime.time.min).timestamp()
                 to_ts = datetime.datetime.combine(to_date, datetime.time.max).timestamp()
 
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                    for folder in base_folders:
-                        if not os.path.exists(folder):
-                            continue
-
-                        for root, _, files in os.walk(folder):
-                            for file in files:
-                                full_path = os.path.join(root, file)
-                                try:
-                                    file_ctime = os.path.getctime(full_path)
-                                    if from_ts <= file_ctime <= to_ts:
-                                        arcname = os.path.relpath(full_path, folder)
-                                        zip_file.write(full_path, arcname=arcname)
-                                except Exception as e:
-                                    logger.warning(f"Failed to process file {full_path}: {e}")
+                    for base_dir in base_dirs:
+                        for root, _, files in os.walk(base_dir):
+                            for fname in files:
+                                fpath = os.path.join(root, fname)
+                                if is_valid_file(fpath, from_ts, to_ts):
+                                    arcname = os.path.relpath(fpath, base_dir)
+                                    zip_file.write(fpath, arcname=arcname)
 
                 zip_buffer.seek(0)
-                filename = f"{data_type}_files_{from_date}_to_{to_date}.zip"
-                return FileResponse(zip_buffer, as_attachment=True, filename=filename)
+                return FileResponse(
+                    zip_buffer,
+                    as_attachment=True,
+                    filename=f"{data_type}_files_{from_date}_to_{to_date}.zip"
+                )
 
         else:
             form = DownloadDataForm()
@@ -199,6 +196,13 @@ class PatientAdmin(admin.ModelAdmin):
         return format_html('<a class="button" href="{}">Rerun Prediction</a>', url)
 
     rerun_button.short_description = 'Actions'
+    
+def is_valid_file(path, from_ts, to_ts):
+    try:
+        stat = os.stat(path)
+        return from_ts <= stat.st_ctime <= to_ts
+    except Exception:
+        return False  # Skip problematic files
 
 # Register other models to the custom admin site
 admin_site.register(Article)
