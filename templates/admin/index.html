@@ -3,10 +3,15 @@
 {% block content %}
 {{ block.super }}
 
-<div class="app-custom">
-    <h2>Backend Tools</h2>
-    <ul>
-        <li><a href="{% url 'admin:backend-functions' %}">🧠 Backend Functions</a></li>
-    </ul>
+<div class="app-api module">
+    <table>
+        <caption>Backend Tools</caption>
+        <tbody>
+            <tr class="model-backend-functions">
+                <th scope="row"><a href="{% url 'admin:backend-functions' %}">Backend Functions</a></th>
+                <td><a href="{% url 'admin:backend-functions' %}">Open</a></td>
+            </tr>
+        </tbody>
+    </table>
 </div>
 {% endblock %}
