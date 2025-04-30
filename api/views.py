@@ -380,6 +380,7 @@ class PredictWithoutModelExtraction(APIView):
         age = p.age
         gender = p.gender
         name = p.name
+        format = '%Y-%m-%d_%H:%M:%S'
         current_time = datetime.datetime.now().strftime(format)
         
         out_dir = f'/mnt/pd_app/results/{name}/'
