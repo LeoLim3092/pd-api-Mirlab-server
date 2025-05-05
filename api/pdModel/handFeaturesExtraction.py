@@ -5,7 +5,7 @@ import numpy as np
 from scipy.signal import find_peaks
 import pandas as pd
 from itertools import combinations
-from utils import find_period
+from .utils import find_period
 from scipy.signal import stft
 
 
