@@ -19,8 +19,10 @@ gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_l
                      'l_arm_min_angles', 'r_arm_max_angles', 'r_arm_min_angles', 'core_max_angles', "core_min_angles",
                      'average_duration_per_rounds', "duration_change", "l_mean_steps", "r_mean_steps"]
 
-hand_features_name = ["right_finger_open_duration", 'right_finger_open_change', "right_finger_open_distance",
-                      "left_finger_open_duration", 'left_finger_open_change', "left_finger_open_distance"]
+hand_features_name = [ "Right Tapping Time", "Right Tapping Time Change", "Right Tapping Distance", "Left Tapping Time",
+                       "Left Tapping Time Change", "Left Tapping Distance", "Left Tapping Frequency", 
+                       "Left Tapping Intensity", "Left Tapping Power", "Left Tapping Frequency Change",
+                       "Right Tapping Frequency", "Right Tapping Intensity", "Right Tapping Power", "Right Tapping Frequency Change"]
 
 voice_feature_name = ['reading_time' , 'score', 'pause(%)', 'volume change', 'pitch change', 'Average pitch']
 
