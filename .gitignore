@@ -11,3 +11,8 @@ sport-record-env/
 .venv/
 media/
 .vs/
+
+# logs
+*.log
+django.log
+logs/
