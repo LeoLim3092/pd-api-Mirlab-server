@@ -1,0 +1,37 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block content %}
+<h1>Rerun Predictions</h1>
+<p>Use the form below to rerun predictions for patients created within a date range, or rerun for <em>all</em> patients.</p>
+
+<hr/>
+
+<h2>Rerun from Date Range</h2>
+<form method="post" action="{% url 'admin:rerun-from-dates' %}" class="form-row">
+  {% csrf_token %}
+  <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+    <label for="from_date"><strong>From</strong></label>
+    <input id="from_date" name="from_date" type="date" required />
+
+    <label for="to_date"><strong>To</strong></label>
+    <input id="to_date" name="to_date" type="date" />
+
+    <button type="submit" class="button default">Rerun from date range</button>
+  </div>
+  <p style="margin-top:8px; color:#666;">If “To” is empty, it will use the same day as “From”.</p>
+</form>
+
+<hr/>
+
+<h2>Rerun All Patients</h2>
+<form method="post" action="{% url 'admin:rerun-all' %}">
+  {% csrf_token %}
+  <button type="submit" class="button deletelink">Rerun all predictions</button>
+</form>
+
+<p style="margin-top:12px; color:#b00;">
+  Warning: rerunning all patients can be slow and resource-heavy.
+</p>
+
+{% endblock %}
