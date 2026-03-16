@@ -27,10 +27,20 @@ MEDIA_URL = '/results/'
 SECRET_KEY = 'django-insecure-ts@22b^whu^=+z7&=sdsis9!f5t8nbj*vva64i@)#fyda1gj=n'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+	'api.ntuhpdapp.com.tw',
+	'www.api.ntuhpdapp.com.tw'
+]
 
+CSRF_TRUSTED_ORIGINS = [
+	"https://api.ntuhpdapp.com.tw",
+]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PHOTO", "https")
+
+USE_X_FORWARDED_HOST = True
 
 # Application definition
 

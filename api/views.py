@@ -1,10 +1,11 @@
 import os
 import asyncio
 import json
+import threading
 import datetime
 import csv
 
-from .pdModel.deployModel import model_extraction, predict_models, data_checking
+from .pdModel.deployModel import features_extraction, extract_gait, extract_hand, predict_models, data_checking
 
 from django.shortcuts import render, redirect
 from django.contrib.auth.models import User, Group
@@ -29,12 +30,16 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.decorators import api_view
-
+from rest_framework.response import Response
+from rest_framework import status
+from datetime import timedelta
 
 
 print(settings.MEDIA_ROOT, settings.MEDIA_URL)
 
 base_path = '/mnt/pd_app'
+gaitlandmark_pth = base_path + "/" + "gaitLandmarks/"
+handlandmark_pth = base_path + "/" + "handLandmarks/"
 sound_storage = FileSystemStorage(location=f'{base_path}/sound')
 walk_storage = FileSystemStorage(location=f'{base_path}/walk')
 gesture_storage = FileSystemStorage(location=f'{base_path}/gesture')
@@ -185,16 +190,31 @@ class UploadWalk(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
-        file = request.FILES['file']
+        file_obj = request.FILES['file']
         pid = request.POST["pid"]
-        format = '%Y-%m-%d %H:%M:%S'
-        time = datetime.datetime.now().strftime(format)
+
+        time_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         current_pid = Patient.objects.get(patientId=int(pid))
         patient = current_pid.name
 
-        file_path = walk_storage.save(time + "_walk_" + patient + '_' + '_' + pid + '_' + file.name, file)
-        file = FileUploaded(patientId=current_pid, patient=patient, file_type='gait', file_path=file_path)
-        file.save()
+        file_name = f"{time_str}_walk_{patient}_{pid}_{file_obj.name}"
+        file_path = walk_storage.save(file_name, file_obj)
+
+        uploaded = FileUploaded(
+            patientId=current_pid,
+            patient=patient,
+            file_type='gait',
+            file_path=file_path
+        )
+        uploaded.save()
+
+        full_file_path = os.path.join(base_path, "walk", file_path)
+
+        threading.Thread(
+            target=extract_gait,
+            args=(full_file_path, gaitlandmark_pth),
+            daemon=True
+        ).start()
 
         return HttpResponse()
 
@@ -204,25 +224,41 @@ class UploadGesture(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
-        file = request.FILES['file']
+        file_obj = request.FILES['file']
         pid = request.POST["pid"]
-        type = request.POST['type']
-        format = '%Y-%m-%d %H:%M:%S'
-        time = datetime.datetime.now().strftime(format)
+        hand_type = request.POST['type']
+
+        now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         current_pid = Patient.objects.get(patientId=int(pid))
         patient = current_pid.name
 
-        if type == '右手':
-            file_path = gesture_storage.save(time + "_gesture_" + patient + '_' + '_' + pid + '_' + type + '_' + file.name, file)
-            file = FileUploaded(patientId=current_pid, patient=patient, file_type='right_hand', file_path=file_path)
-            file.save()
+        file_name = f"{now_str}_gesture_{patient}_{pid}_{hand_type}_{file_obj.name}"
+        file_path = gesture_storage.save(file_name, file_obj)
+        full_file_path = os.path.join(base_path, "gesture", file_path)
+
+        if hand_type == '右手':
+            side = 'right'
+            file_type = 'right_hand'
         else:
-            file_path = gesture_storage.save(time + "_gesture_" + patient + '_' + '_' + pid + '_' + type + '_' + file.name, file)
-            file = FileUploaded(patientId=current_pid, patient=patient, file_type='left_hand', file_path=file_path)
-            file.save()
+            side = 'left'
+            file_type = 'left_hand'
 
+        uploaded = FileUploaded(
+            patientId=current_pid,
+            patient=patient,
+            file_type=file_type,
+            file_path=file_path
+        )
+        uploaded.save()
+
+        threading.Thread(
+            target=extract_hand,
+            args=(full_file_path, handlandmark_pth, side),
+            daemon=True
+        ).start()
+        
         return HttpResponse()
-
+    
 
 class UploadMedicineRecord(APIView):
 
@@ -327,7 +363,7 @@ class CreateNewUser(APIView):
             user.save()
             return JsonResponse({'message': 'User created successfully'})
         else:
-            HttpResponseBadRequest()
+            return HttpResponseBadRequest()
 
 
 class CheckRecording(APIView):
@@ -385,6 +421,7 @@ class PredictWithoutModelExtraction(APIView):
         
         out_dir = f'/mnt/pd_app/results/{name}/'
         lastest_extracted_npy = get_latest_folder_by_creation_time(out_dir) + "/" + "all_feature.npy"
+        
         try:
             gait_result, hand_result, voice_results, all_results = predict_models(lastest_extracted_npy, age, gender)
             r = Results(patientId=p, patient=name, gait_result=gait_result, voice_result=voice_results,
@@ -401,56 +438,19 @@ class PredictModel(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
+
         pid = request.POST['pid']
-        format = '%Y-%m-%d_%H:%M:%S'
-        current_time = datetime.datetime.now().strftime(format)
-
-        p = Patient.objects.get(patientId=int(pid))
-        age = p.age
-        gender = p.gender
-        name = p.name
-
-        r_hand_file = FileUploaded.objects.filter(patientId=p, file_type='right_hand').order_by('-upload_time').first()
-        l_hand_file = FileUploaded.objects.filter(patientId=p, file_type='left_hand').order_by('-upload_time').first()
-        gait_file = FileUploaded.objects.filter(patientId=p, file_type='gait').order_by('-upload_time').first()
-        
-        # Fetch the latest sound file that does not contain "freetalk" in the filename
-        sound_file = FileUploaded.objects.filter(
-            patientId=p, file_type='sound'
-        ).exclude(file_path__icontains='freetalk').order_by('-upload_time').first()
-
-        # Check if the required files are present
-        if not (r_hand_file and l_hand_file and gait_file and sound_file):
-            return JsonResponse({"error": "Missing required files"}, status=400)
-
-        out_d = f'/mnt/pd_app/results/{name}/{current_time}/'
-
-        if os.path.isdir(f'/mnt/pd_app/results/{name}/'):
-            os.makedirs(f'/mnt/pd_app/results/{name}/{current_time}/')
-        else:
-            os.makedirs(f'/mnt/pd_app/results/{name}/')
-
-        gait_file_pth = f'{base_path}/walk/{gait_file.file_path}'
-        l_hand_file_pth = f'{base_path}/gesture/{l_hand_file.file_path}'
-        r_hand_file_pth = f'{base_path}/gesture/{r_hand_file.file_path}'
-        sound_file_pth = f'{base_path}/sound/{sound_file.file_path}'
-
-        print(gait_file_pth, l_hand_file_pth, r_hand_file_pth, sound_file_pth)
 
         try:
-            model_extraction(gait_file_pth, l_hand_file_pth, r_hand_file_pth, sound_file_pth, out_d)
-            all_features_pth = f'{out_d}all_feature.npy'
-            gait_result, hand_result, voice_results, all_results = predict_models(all_features_pth, age, gender, out_d)
-
-            r = Results(patientId=p, patient=name, gait_result=gait_result, voice_result=voice_results,
-                        hand_result=hand_result, multimodal_results=all_results, upload_time=current_time)
-            r.save()
-
+            print("Running model prediction!")
+            run_predict_model(pid)
             return HttpResponse()
 
-        except:
-            error_message = "Failed to process data"
-            return Response({"error": error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            return JsonResponse(
+                {"error": str(e)},
+                status=500
+            )
 
 
 class GetResults(APIView):
@@ -526,40 +526,20 @@ class RerunAllPatientPredictModel(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
-        # Fetch all patients
+
         patients = Patient.objects.all()
         failed_patients = []
 
         for patient in patients:
             try:
-                # Create a mock request for the PredictModel class
-                mock_request = WSGIRequest({
-                    'REQUEST_METHOD': 'POST',
-                    'wsgi.input': None,
-                })
-                mock_request.POST = {
-                    'pid': patient.patientId
-                }
-
-                # Call the PredictModel class
-                predict_model_view = PredictWithoutModelExtraction()
-                response = predict_model_view.post(mock_request)
-
-                # Check if the response indicates success
-                if response.status_code != 200:
-                    failed_patients.append({
-                        "patientId": patient.patientId,
-                        "reason": f"PredictModel returned status {response.status_code}"
-                    })
+                run_predict_model(patient.patientId, save_result=False)
 
             except Exception as e:
-                # Log the failure for this patient
                 failed_patients.append({
                     "patientId": patient.patientId,
                     "reason": str(e)
                 })
 
-        # Return a summary of the operation
         return JsonResponse({
             "message": "Rerun completed",
             "failed_patients": failed_patients
@@ -588,25 +568,7 @@ class RerunFromDatePatientPrediction(APIView):
 
         for patient in patients:
             try:
-                # Create a mock request for the PredictModel class
-                mock_request = WSGIRequest({
-                    'REQUEST_METHOD': 'POST',
-                    'wsgi.input': None,
-                })
-                mock_request.POST = {
-                    'pid': patient.patientId
-                }
-
-                # Call the PredictModel class
-                predict_model_view = PredictModel()
-                response = predict_model_view.post(mock_request)
-
-                # Check if the response indicates success
-                if response.status_code != 200:
-                    failed_patients.append({
-                        "patientId": patient.patientId,
-                        "reason": f"PredictModel returned status {response.status_code}"
-                    })
+                run_predict_model(patient.patientId, save_result=False)
 
             except Exception as e:
                 # Log the failure for this patient
@@ -621,7 +583,7 @@ class RerunFromDatePatientPrediction(APIView):
             "failed_patients": failed_patients
         })
 
-   
+
 class getLastUploadData(APIView):
 
     def post(self, request):
@@ -644,6 +606,84 @@ class getLastUploadData(APIView):
                 "sound_time": sound_last_upload}
 
         return JsonResponse(data, safe=False)
+
+
+def run_predict_model(patient_id, save_results=True):
+    time_format = '%Y-%m-%d_%H:%M:%S'
+    current_time = datetime.datetime.now().strftime(time_format)
+
+    p = Patient.objects.get(patientId=int(patient_id))
+
+    age = p.age
+    gender = p.gender
+    name = p.name
+    
+    if not save_results:
+        print(f"Read patient object: Age {age}, gender {gender}, name {name}")
+
+    r_hand_file = FileUploaded.objects.filter(
+        patientId=p, file_type='right_hand'
+    ).order_by('-upload_time').first()
+
+    l_hand_file = FileUploaded.objects.filter(
+        patientId=p, file_type='left_hand'
+    ).order_by('-upload_time').first()
+
+    gait_file = FileUploaded.objects.filter(
+        patientId=p, file_type='gait'
+    ).order_by('-upload_time').first()
+
+    sound_file = FileUploaded.objects.filter(
+        patientId=p, file_type='sound'
+    ).exclude(file_path__icontains='freetalk').order_by('-upload_time').first()
+
+    if not (r_hand_file and l_hand_file and gait_file and sound_file):
+        raise Exception("Missing required files")
+
+    out_d = f'/mnt/pd_app/results/{name}/{current_time}/'
+    os.makedirs(out_d, exist_ok=True)
+
+    gait_file_pth = f'{base_path}/walk/{gait_file.file_path}'
+    l_hand_file_pth = f'{base_path}/gesture/{l_hand_file.file_path}'
+    r_hand_file_pth = f'{base_path}/gesture/{r_hand_file.file_path}'
+    sound_file_pth = f'{base_path}/sound/{sound_file.file_path}'
+
+    features_extraction(
+        gait_file_pth,
+        l_hand_file_pth,
+        r_hand_file_pth,
+        sound_file_pth,
+        out_d,
+        debug=False
+    )
+
+    all_features_pth = f'{out_d}all_feature.npy'
+
+    gait_result, hand_result, voice_results, all_results = predict_models(
+        all_features_pth,
+        age,
+        gender,
+        out_d
+    )
+
+    result_data = {
+        "patientId": p,
+        "patient": name,
+        "gait_result": gait_result,
+        "voice_result": voice_results,
+        "hand_result": hand_result,
+        "multimodal_results": all_results,
+        "upload_time": current_time,
+    }
+
+    if save_results:
+        r = Results.objects.create(**result_data)
+        return r
+    
+    if not save_results:
+        print("finish models prediction")
+        
+    return result_data
 
 
 def get_tokens_for_user(user):

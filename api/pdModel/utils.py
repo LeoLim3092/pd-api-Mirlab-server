@@ -9,16 +9,89 @@ def autocorr(x):
     return result[int(result.size / 2):]
 
 
-def find_period(arr):
+def find_period(arr, debug=False):
+
+    if debug:
+        print("=" * 60)
+        print("[find_period] Start")
+        print(f"    input type : {type(arr)}")
+        try:
+            print(f"    input len  : {len(arr)}")
+        except:
+            print("    input len  : not available")
+
+    # =========================================================
+    # 1. Remove mean
+    # =========================================================
     mean = np.mean(arr)
 
-    acf_result = autocorr(arr - mean)
-    peaks, _ = find_peaks(acf_result)
+    if debug:
+        print("\n[STEP 1] Remove mean")
+        print(f"    mean value: {mean}")
 
-    if peaks[0] > 50:
+    centered = arr - mean
+
+    # =========================================================
+    # 2. Compute autocorrelation
+    # =========================================================
+    if debug:
+        print("\n[STEP 2] Compute autocorrelation")
+
+    acf_result = autocorr(centered)
+
+    if debug:
+        try:
+            print(f"    acf_result len : {len(acf_result)}")
+            preview_n = min(10, len(acf_result))
+            print(f"    first {preview_n} acf values: {acf_result[:preview_n]}")
+        except:
+            pass
+
+    # =========================================================
+    # 3. Detect peaks in ACF
+    # =========================================================
+    if debug:
+        print("\n[STEP 3] Find peaks in autocorrelation")
+
+    peaks, properties = find_peaks(acf_result)
+
+    if debug:
+        print(f"    peaks found: {len(peaks)}")
+        print(f"    peak indices: {peaks}")
+
+    # =========================================================
+    # 4. Determine period
+    # =========================================================
+    if debug:
+        print("\n[STEP 4] Determine period")
+
+    if len(peaks) == 0:
+        period = 1
+        if debug:
+            print("    WARNING: no peaks found -> default period = 1")
+
+    elif len(peaks) == 1:
         period = peaks[0]
+        if debug:
+            print("    only one peak found")
+            print(f"    period = {period}")
+
     else:
-        period = peaks[1]
+        if peaks[0] > 50:
+            period = peaks[0]
+            if debug:
+                print("    using peaks[0] (>50)")
+        else:
+            period = peaks[1]
+            if debug:
+                print("    peaks[0] too small -> using peaks[1]")
+
+        if debug:
+            print(f"    selected period: {period}")
+
+    if debug:
+        print("\n[find_period] Finished")
+        print("=" * 60)
 
     return period, acf_result
 

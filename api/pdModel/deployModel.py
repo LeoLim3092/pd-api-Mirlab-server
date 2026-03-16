@@ -8,9 +8,12 @@ from datetime import datetime
 import joblib
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
+import cv2
+
 
 MODEL_PATHS = "/home/pdapp/pd_api_server/api/pdModel/PD_pretrained_models/"
+HAND_LANDMARK_PATH = "/mnt/pd_app/handLandmarks/"
+GAIT_LANDMARK_PATH = "/mnt/pd_app/gaitLandmarks/"
 TRAINED_MODELS_LS = ["RF"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB", "RF", "AdaBoost",
 
 gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_len_average', 'left_right_foot_len_max',
@@ -19,20 +22,26 @@ gait_feature_name = ['left_foot_ground', 'right_foot_ground', 'left_right_foot_l
                      'l_arm_min_angles', 'r_arm_max_angles', 'r_arm_min_angles', 'core_max_angles', "core_min_angles",
                      'average_duration_per_rounds', "duration_change", "l_mean_steps", "r_mean_steps"]
 
-hand_features_name = [ "Right Tapping Time", "Right Tapping Time Change", "Right Tapping Distance", "Left Tapping Time",
-                       "Left Tapping Time Change", "Left Tapping Distance", "Left Tapping Frequency", 
-                       "Left Tapping Intensity", "Left Tapping Power", "Left Tapping Frequency Change",
-                       "Right Tapping Frequency", "Right Tapping Intensity", "Right Tapping Power", "Right Tapping Frequency Change"]
+hand_features_name = ["Right Tapping Time", "Right Tapping Time Change", "Right Tapping Distance", "Right Tapping Frequency",
+                      "Right Tapping Intensity", "Right Tapping Power", "Right Tapping Frequency Change", "Left Tapping Time",
+                      "Left Tapping Time Change", "Left Tapping Distance", "Left Tapping Frequency", 
+                      "Left Tapping Intensity", "Left Tapping Power", "Left Tapping Frequency Change"]
 
 voice_feature_name = ['reading_time' , 'score', 'pause(%)', 'volume change', 'pitch change', 'Average pitch']
 
 
 def extract_gait(gait_video_pth, out_dir):
     gait_extraction(gait_video_pth, out_dir)
-    pth_2d = f"{out_dir}2d_{os.path.basename(gait_video_pth)[:-4]}.npy"
-    pth_3d = f"{out_dir}3d_{os.path.basename(gait_video_pth)[:-4]}.npz"
-    gait_feature = gaitFeaturesExtraction.pose_features_extract(pth_2d, pth_3d, plot_results=True,
-                                                                save_fig_pth=f"{out_dir}vis_gait_extraction.png")
+    
+
+def gait_features_extraction(gait_video_pth, fps, out_dir, debug=False):
+    
+    pth_2d = f"{GAIT_LANDMARK_PATH}2d_{os.path.basename(gait_video_pth)[:-4]}.npy"
+    pth_3d = f"{GAIT_LANDMARK_PATH}3d_{os.path.basename(gait_video_pth)[:-4]}.npz"
+    
+    gait_feature = gaitFeaturesExtraction.pose_features_extract(pth_2d, pth_3d, fps=fps, plot_results=True,
+                                                                save_fig_pth=f"{out_dir}vis_gait_extraction.png", debug=debug)
+    np.save(f'{out_dir}gait_feature.npy', gait_feature)
     return gait_feature
 
 
@@ -40,42 +49,243 @@ def extract_hand(hand_video_pth, out_dir, hand):
     hand_extraction(hand_video_pth, out_video_root=out_dir, hand=hand)
 
 
-# todo extract_voice
+def hand_features_extraction(left_video_path, right_video_path, fps, out_dir, debug=False):
+
+    if debug:
+        print("=" * 70)
+        print("[hand_features_extraction] Start")
+        print(f"    left_video_path : {left_video_path}")
+        print(f"    right_video_path: {right_video_path}")
+        print(f"    fps             : {fps}")
+        print(f"    out_dir         : {out_dir}")
+
+    # =========================================================
+    # 1. Construct landmark file paths
+    # =========================================================
+    if debug:
+        print("\n[STEP 1] Build landmark file paths")
+
+    r_name = f"right_hand_{os.path.basename(right_video_path)[:-4]}.txt"
+    l_name = f"left_hand_{os.path.basename(left_video_path)[:-4]}.txt"
+
+    r_path = os.path.join(HAND_LANDMARK_PATH, r_name)
+    l_path = os.path.join(HAND_LANDMARK_PATH, l_name)
+
+    if debug:
+        print(f"    right landmark path: {r_path}")
+        print(f"    left landmark path : {l_path}")
+
+    # Check if files exist
+    if not os.path.exists(r_path):
+        raise FileNotFoundError(f"Right hand landmark file not found: {r_path}")
+
+    if not os.path.exists(l_path):
+        raise FileNotFoundError(f"Left hand landmark file not found: {l_path}")
+
+    if debug:
+        print("    landmark files exist")
+
+    # =========================================================
+    # 2. Extract hand features
+    # =========================================================
+    if debug:
+        print("\n[STEP 2] Extract hand features")
+
+    hand_feature = handFeaturesExtraction.single_thumb_index_hand(
+        r_path,
+        l_path,
+        out_dir,
+        fps=fps,
+        debug=debug
+    )
+
+    if debug:
+        print(f"    hand_feature type: {type(hand_feature)}")
+        try:
+            print(f"    hand_feature length: {len(hand_feature)}")
+        except Exception:
+            print("    hand_feature length: not available")
+
+    # =========================================================
+    # 3. Save hand features
+    # =========================================================
+    save_path = os.path.join(out_dir, "hand_feature.npy")
+
+    if debug:
+        print("\n[STEP 3] Save hand features")
+        print(f"    save path: {save_path}")
+
+    np.save(save_path, hand_feature)
+
+    if debug:
+        print("    hand features saved successfully")
+
+    if debug:
+        print("\n[hand_features_extraction] Finished")
+        print("=" * 70)
+
+    return hand_feature
 
 
-def model_extraction(gait_video_pth, left_video_path, right_video_path, voice_path, out_dir):
+def features_extraction(gait_video_pth, left_video_path, right_video_path, voice_path, out_dir, debug=False):
 
-    voice_feature = voice_features_extraction(voice_path)
+    if debug:
+        print("=" * 70)
+        print("[features_extraction] Start features extraction")
+        print("=" * 70)
+        print("\n[DEBUG] Input paths")
+        print(f"    gait_video_pth : {gait_video_pth}")
+        print(f"    left_video_path: {left_video_path}")
+        print(f"    right_video_path: {right_video_path}")
+        print(f"    voice_path     : {voice_path}")
+        print(f"    out_dir        : {out_dir}")
 
-    print(f'Start gait features extraction')
-    gait_feature = extract_gait(gait_video_pth, out_dir)
+    # --- Ensure output directory exists ---
+    os.makedirs(out_dir, exist_ok=True)
+    
+    if debug:
+        print("\n[STEP 1] Output directory check")
+        print(f"    ensured output directory exists: {out_dir}")
 
-    print(f'Start left hand features extraction')
-    extract_hand(left_video_path, out_dir, 'left')
+    # =========================================================
+    # 1. Voice feature extraction
+    # =========================================================
 
-    print(f'Start right hand features extraction')
-    extract_hand(right_video_path, out_dir, 'right')
 
-    r_path = f"{out_dir}right_hand_{os.path.basename(right_video_path)[:-4]}.txt"
-    l_path = f"{out_dir}left_hand_{os.path.basename(left_video_path)[:-4]}.txt"
+    voice_feature = voice_features_extraction(voice_path, debug=debug)
 
-    hand_feature = handFeaturesExtraction.single_thumb_index_hand(r_path, l_path, out_dir)
-    print(f"Finish hand features extraction")
+    voice_save_path = os.path.join(out_dir, "voice_feature.npy")
+    
+    if debug:
+        print("\n[STEP 3] Voice feature extraction finished")
+        print(f"    voice_feature type   : {type(voice_feature)}")
+        try:
+            print(f"    voice_feature length : {len(voice_feature)}")
+        except Exception:
+            print("    voice_feature length : not available")
+        print(f"    saving voice features to: {voice_save_path}")
 
-    print(f"{gait_feature}, \n {hand_feature}, \n {voice_feature} \n")
+    np.save(voice_save_path, voice_feature)
+
+    # =========================================================
+    # 2. Read gait FPS
+    # =========================================================
+
+    cap = cv2.VideoCapture(gait_video_pth)
+    
+    if not cap.isOpened():
+        raise ValueError(f"Cannot open video: {gait_video_pth}")
+
+    gait_fps = int(cap.get(cv2.CAP_PROP_FPS))
+    gait_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    gait_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    gait_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    if gait_fps <= 0:
+        raise ValueError(f"Invalid FPS: {gait_video_pth}")
+
+    if debug:
+        print(f"    gait_fps        : {gait_fps}")
+        print(f"    gait_frame_count: {gait_frame_count}")
+        print(f"    gait_resolution : {gait_width} x {gait_height}")
+        if gait_fps > 0:
+            print(f"    gait_duration   : {gait_frame_count / gait_fps:.3f} sec")
+
+    # =========================================================
+    # 3. Gait feature extraction
+    # =========================================================
+
+    gait_feature = gait_features_extraction(gait_video_pth, gait_fps, out_dir, debug=debug)
+
+    if debug:
+        print("\n[STEP 6] Gait feature extraction finished")
+        print(f"    gait_feature type   : {type(gait_feature)}")
+        try:
+            print(f"    gait_feature length : {len(gait_feature)}")
+        except Exception:
+            print("    gait_feature length : not available")
+
+    # =========================================================
+    # 4. Read hand FPS from left video
+    # =========================================================
+
+    cap = cv2.VideoCapture(left_video_path)
+    
+    if not cap.isOpened():
+        raise ValueError(f"Cannot open video: {left_video_path}")
+
+    hand_fps = int(cap.get(cv2.CAP_PROP_FPS))
+    hand_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    hand_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    hand_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    if hand_fps <= 0:
+        raise ValueError(f"Invalid FPS: {left_video_path}")
+
+    if debug:
+        print(f"    hand_fps        : {hand_fps}")
+        print(f"    hand_frame_count: {hand_frame_count}")
+        print(f"    hand_resolution : {hand_width} x {hand_height}")
+        if hand_fps > 0:
+            print(f"    hand_duration   : {hand_frame_count / hand_fps:.3f} sec")
+
+    # =========================================================
+    # 5. Hand feature extraction
+    # =========================================================
+
+    hand_feature = hand_features_extraction(left_video_path, right_video_path, hand_fps, out_dir, debug=debug)
+
+    if debug:
+        print("\n[STEP 9] Hand feature extraction finished")
+        print(f"    hand_feature type   : {type(hand_feature)}")
+        try:
+            print(f"    hand_feature length : {len(hand_feature)}")
+        except Exception:
+            print("    hand_feature length : not available")
+
+    # =========================================================
+    # 6. Merge all features
+    # =========================================================
+
+    if debug:
+        try:
+            print(f"    gait_feature length : {len(gait_feature)}")
+        except Exception:
+            print("    gait_feature length : not available")
+
+        try:
+            print(f"    hand_feature length : {len(hand_feature)}")
+        except Exception:
+            print("    hand_feature length : not available")
+
+        try:
+            print(f"    voice_feature length: {len(voice_feature)}")
+        except Exception:
+            print("    voice_feature length: not available")
 
     all_features = gait_feature + hand_feature + voice_feature
-    np.save(f'{out_dir}all_feature.npy', all_features)
-    print(f"save! \n {all_features}")
-    
 
-def predict_sound(all_features_pth, age, gender, out_dir):
+    if debug:
+        print(f"    all_features type   : {type(all_features)}")
+        try:
+            print(f"    all_features length : {len(all_features)}")
+        except Exception:
+            print("    all_features length : not available")
+
+    # =========================================================
+    # 7. Save all features
+    # =========================================================
+    all_save_path = os.path.join(out_dir, "all_feature.npy")
+    np.save(all_save_path, all_features)
+
+    return all_features
+
+    
+def predict_sound(all_features_pth, age, gender):
     sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
     voice_len = len(voice_feature_name)
-    voice_result = {}
-    
-    for k in TRAINED_MODELS_LS:
-        voice_result[k] = [0, 0]
 
     data = np.load(all_features_pth)
     voice_feature = np.concatenate([np.array([age, gender]), data[-voice_len:]])
@@ -84,13 +294,9 @@ def predict_sound(all_features_pth, age, gender, out_dir):
     return voice_result
 
 
-def predict_gait(all_features_pth, age, gender, out_dir):
+def predict_gait(all_features_pth, age, gender):
     sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
     gait_len = len(gait_feature_name) 
-    gait_result = {}
-    
-    for k in TRAINED_MODELS_LS:
-        gait_result[k] = [0, 0]
 
     data = np.load(all_features_pth)
     gait_feature = np.concatenate([np.array([age, gender]), data[:gait_len]])
@@ -98,14 +304,10 @@ def predict_gait(all_features_pth, age, gender, out_dir):
 
     return gait_result
 
-def predict_hand(all_features_pth, age, gender, out_dir):
+def predict_hand(all_features_pth, age, gender):
     sfs_idx = joblib.load(f'{MODEL_PATHS}nvp_sfs_idx.txt')
     gait_len = len(gait_feature_name)
     hand_len = len(hand_features_name)
-    hand_result = {}
-    
-    for k in TRAINED_MODELS_LS:
-        hand_result[k] = [0, 0]
 
     data = np.load(all_features_pth)
     hand_feature = np.concatenate([np.array([age, gender]), data[gait_len:gait_len + hand_len]])
@@ -121,15 +323,6 @@ def predict_models(all_features_pth, age, gender, out_dir=""):
     gait_len = len(gait_feature_name)
     hand_len = len(hand_features_name)
     voice_len = len(voice_feature_name)
-    
-    gait_result = {}
-    hand_result = {}
-    voice_result = {}
-    all_result = {}
-
-    for r in [gait_result, hand_result, voice_result, all_result]:
-        for k in TRAINED_MODELS_LS:
-            r[k] = [0, 0]
 
     data = np.load(all_features_pth)
     gait_feature = np.concatenate([np.array([age, gender]), data[:gait_len]])
@@ -148,12 +341,13 @@ def predict_models(all_features_pth, age, gender, out_dir=""):
         all_result[k] = np.average(np.array([[gait_result[k]], [hand_result[k]],
                                              [voice_result[k]]]), weights=weight, axis=0)[0]
         
+    results = np.array([gait_result["RF"][0], hand_result["RF"][0], voice_result["RF"][0],
+                            all_result["RF"][0]]) * 100
+        
     if out_dir:
 
         # plot results
-        results = np.array([gait_result["RF"][0], hand_result["RF"][0], voice_result["RF"][0],
-                            all_result["RF"][0]]) * 100
-    
+        plt.figure()
         plt.bar(["Gait", "Hand", "Voice", "All"], results)
 
         for i, r in enumerate(results):
@@ -165,6 +359,7 @@ def predict_models(all_features_pth, age, gender, out_dir=""):
         plt.ylim([0, 120])
         plt.axis("off")
         plt.savefig(f"{out_dir}result.png")
+        plt.close()
 
     return results
 
@@ -179,7 +374,6 @@ def deploy(data, feature_idx_dt, modal="gait", fold=10):
         for i in range(fold):
 
             clf_pth = f'{save_file_dir}{i}_{model_name}.joblib'
-            print(print(clf_pth))
             clf = joblib.load(clf_pth)
             f_idx = feature_idx_dt[model_name]
             predict_proba = clf.predict_proba(data[:, f_idx])
@@ -238,17 +432,3 @@ def data_checking(gait_file_pth, l_hand_file_pth, r_hand_file_pth, sound_file_pt
 
     return success, error
 
-
-if __name__ == "__main__":
-    gait_v_pth = "/mnt/pd_app/walk/20200818_5C.mp4"
-    left_v_path = "/mnt/pd_app/gesture/202008069_AL.mp4"
-    right_v_path = "/mnt/pd_app/gesture/202008069_AR.mp4"
-    out_d = "/mnt/pd_app/results/test/"
-
-    ini_time_for_now = datetime.now()
-    asyncio.run(model_extraction(gait_v_pth, left_v_path, right_v_path, out_d))
-    finish_time = datetime.now()
-    print((finish_time - ini_time_for_now).seconds)
-
-    # data = np.load(f'{out_d}all_feature.npy')
-    # deploy(data, feature_idx_dt, modal="gait", fold=10)
