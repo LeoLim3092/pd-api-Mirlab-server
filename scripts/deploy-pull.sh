@@ -7,8 +7,9 @@ set -e
 # --- Configure these for your server ---
 PROJECT_DIR="${PROJECT_DIR:-/home/pdapp/pd_api_server}"   # Change to your app path
 BRANCH="${BRANCH:-model-adjustment}"
-VENV_ACTIVATE="/home/pdapp/miniconda3/envs/pdapp/bin/activate"          # Set to "" if no venv
-RESTART_CMD=""                                            # e.g. "sudo systemctl restart gunicorn"
+# Conda env: use python path directly (reliable in scripts). Or set VENV_ACTIVATE to env's bin/activate.
+VENV_PYTHON="${VENV_PYTHON:-/home/pdapp/miniconda3/envs/pdapp/bin/python}"   # Full path to env python
+RESTART_CMD=""                                             # e.g. "sudo systemctl restart gunicorn"
 
 # --- Pull and deploy ---
 echo "==> Changing to project directory: $PROJECT_DIR"
@@ -20,15 +21,16 @@ git fetch origin
 echo "==> Pulling branch: $BRANCH"
 git pull origin "$BRANCH"
 
-# Use venv Python explicitly (avoids using system Python 2 when script is run with sudo)
+# Use env Python explicitly (avoids wrong Python when conda activate doesn't run in script)
 PYTHON_CMD="python"
-if [ -n "$VENV_ACTIVATE" ] && [ -f "$VENV_ACTIVATE" ]; then
+if [ -n "$VENV_PYTHON" ] && [ -x "$VENV_PYTHON" ]; then
+  PYTHON_CMD="$VENV_PYTHON"
+  echo "==> Using Python: $PYTHON_CMD"
+elif [ -n "$VENV_ACTIVATE" ] && [ -f "$VENV_ACTIVATE" ]; then
   echo "==> Activating virtualenv..."
   source "$VENV_ACTIVATE"
   VENV_BIN="$(dirname "$VENV_ACTIVATE")"
-  if [ -x "$VENV_BIN/python" ]; then
-    PYTHON_CMD="$VENV_BIN/python"
-  fi
+  [ -x "$VENV_BIN/python" ] && PYTHON_CMD="$VENV_BIN/python"
 fi
 
 echo "==> Running migrations..."
