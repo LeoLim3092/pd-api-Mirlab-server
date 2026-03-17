@@ -538,26 +538,109 @@ class GetResults(APIView):
             return HttpResponseBadRequest("Previous result doesn't exist!", status=401)
 
 
+# Base path for results media (videos, audio, images). Use /mnt/results if you mount it there.
+RESULTS_MEDIA_ROOT = os.environ.get('RESULTS_MEDIA_ROOT', '/mnt/pd_app/results')
+
+# Content-Type by file extension for streaming media in the frontend
+MEDIA_CONTENT_TYPES = {
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'mov': 'video/quicktime',
+    'wav': 'audio/wav',
+    'mp3': 'audio/mpeg',
+    'm4a': 'audio/mp4',
+    'ogg': 'audio/ogg',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+}
+
+
+def _get_media_params(request):
+    """Get folder_name and file_name from GET or POST."""
+    if request.method == 'GET':
+        folder_name = (request.GET.get('folder_name') or '').strip()
+        file_name = (request.GET.get('file_name') or '').strip()
+    else:
+        folder_name = (request.POST.get('folder_name') or request.data.get('folder_name') or '').strip()
+        file_name = (request.POST.get('file_name') or request.data.get('file_name') or '').strip()
+    return folder_name, file_name
+
+
+def _content_type_for_file(file_name):
+    ext = (file_name.rsplit('.', 1) + [''])[1].lower()
+    return MEDIA_CONTENT_TYPES.get(ext, 'application/octet-stream')
+
+
 class getVideo(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    def get(self, request: WSGIRequest):
+        """GET with ?folder_name=...&file_name=... for use with fetch + blob URL in frontend."""
+        folder_name, file_name = _get_media_params(request)
+        return _serve_media_file(folder_name, file_name)
+
     def post(self, request: WSGIRequest):
-        file_name = request.POST.get('file_name', '').strip()
-        folder_name = request.POST.get('folder_name', file_name).strip()
-        if not file_name or not folder_name:
-            return HttpResponseBadRequest("file_name and folder_name are required")
-        # Prevent path traversal
-        if '..' in file_name or '..' in folder_name or '/' in file_name or '\\' in file_name:
-            return HttpResponseBadRequest("Invalid file or folder name")
-        video_path = os.path.normpath(f'/mnt/pd_app/results/{folder_name}/{file_name}')
-        if not video_path.startswith('/mnt/pd_app/results/'):
-            return HttpResponseBadRequest("Invalid path")
-        if not os.path.isfile(video_path):
-            return JsonResponse({"error": "File not found"}, status=404)
-        with open(video_path, 'rb') as video_file:
-            response = FileResponse(video_file, content_type='video/mp4')
-            return response
+        folder_name, file_name = _get_media_params(request)
+        return _serve_media_file(folder_name, file_name)
+
+
+def _serve_media_file(folder_name, file_name):
+    if not file_name or not folder_name:
+        return HttpResponseBadRequest("folder_name and file_name are required")
+    if '..' in file_name or '..' in folder_name or '\\' in file_name:
+        return HttpResponseBadRequest("Invalid file or folder name")
+    if '/' in file_name:
+        return HttpResponseBadRequest("file_name must not contain path separators")
+    root = os.path.abspath(RESULTS_MEDIA_ROOT)
+    full_path = os.path.normpath(os.path.join(root, folder_name, file_name))
+    if not full_path.startswith(root + os.sep) and full_path != root:
+        return HttpResponseBadRequest("Invalid path")
+    if not os.path.isfile(full_path):
+        return JsonResponse({"error": "File not found"}, status=404)
+    content_type = _content_type_for_file(file_name)
+    with open(full_path, 'rb') as f:
+        return FileResponse(f, content_type=content_type)
+
+
+class getMedia(APIView):
+    """Serve video/audio/image from results. Supports GET for fetch+blob playback after login."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: WSGIRequest):
+        folder_name, file_name = _get_media_params(request)
+        return _serve_media_file(folder_name, file_name)
+
+    def post(self, request: WSGIRequest):
+        folder_name, file_name = _get_media_params(request)
+        return _serve_media_file(folder_name, file_name)
+
+
+class listResultMedia(APIView):
+    """List result folders and files for a patient so frontend can build video/audio list."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: WSGIRequest):
+        pid = request.GET.get('pid')
+        if not pid:
+            return JsonResponse({"error": "pid is required"}, status=400)
+        p = get_object_or_404(Patient, patientId=int(pid))
+        name = p.name
+        root = os.path.abspath(os.path.join(RESULTS_MEDIA_ROOT, name))
+        if not os.path.isdir(root):
+            return JsonResponse({"folders": [], "patient_name": name})
+        folders = []
+        for entry in sorted(os.listdir(root)):
+            path = os.path.join(root, entry)
+            if not os.path.isdir(path):
+                continue
+            files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+            folders.append({"folder": entry, "files": sorted(files)})
+        return JsonResponse({"patient_name": name, "folders": folders})
 
 
 class getUserData(View):

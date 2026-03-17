@@ -33,6 +33,8 @@ urlpatterns += [
     path("get_last_upload_data", views.getLastUploadData.as_view()),
     path("check_recording", views.CheckRecording.as_view()),
     path("get_video", views.getVideo.as_view()),
+    path("get_media", views.getMedia.as_view()),
+    path("list_result_media", views.listResultMedia.as_view()),
     path("rerun_all_predictions", views.RerunAllPatientPredictModel.as_view()),
     path("rerun_from_date_predictions", views.RerunFromDatePatientPrediction.as_view()),
     path('export-latest-results', views.export_latest_patient_results, name='export_latest_results'),
