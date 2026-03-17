@@ -1,0 +1,110 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>▶️ Play Video / Audio</h1>
+<p>Select a patient to list result folders and play media from <code>/mnt/pd_app/results</code>.</p>
+
+<div style="margin-bottom: 1.5rem;">
+  <label for="patient-select"><strong>Patient:</strong></label>
+  <select id="patient-select" style="margin-left: 8px; padding: 6px 10px; min-width: 200px;">
+    <option value="">-- Select patient --</option>
+    {% for p in patients %}
+    <option value="{{ p.patientId }}">{{ p.name }} (ID: {{ p.patientId }})</option>
+    {% endfor %}
+  </select>
+  <button type="button" id="btn-load" class="button" style="margin-left: 12px;">Load media list</button>
+</div>
+
+<div id="loading" style="display: none;">Loading…</div>
+<div id="error" style="color: red; margin-bottom: 1rem;"></div>
+<div id="media-list"></div>
+
+<hr style="margin: 2rem 0;">
+<a class="button" href="{% url 'admin:backend-functions' %}">⬅️ Back to Backend Functions</a>
+
+<script>
+(function() {
+  const patientSelect = document.getElementById('patient-select');
+  const btnLoad = document.getElementById('btn-load');
+  const loading = document.getElementById('loading');
+  const errorEl = document.getElementById('error');
+  const mediaList = document.getElementById('media-list');
+
+  const listUrl = "{{ play_media_list_url|escapejs }}";
+  const streamBase = "{{ play_media_stream_url|escapejs }}";
+
+  const videoExt = ['mp4', 'webm', 'mov'];
+  const audioExt = ['wav', 'mp3', 'm4a', 'ogg'];
+  const imageExt = ['png', 'jpg', 'jpeg', 'gif'];
+
+  function ext(f) {
+    const i = f.lastIndexOf('.');
+    return i >= 0 ? f.slice(i + 1).toLowerCase() : '';
+  }
+  function isVideo(f) { return videoExt.includes(ext(f)); }
+  function isAudio(f) { return audioExt.includes(ext(f)); }
+  function isImage(f) { return imageExt.includes(ext(f)); }
+
+  function streamUrl(folderName, fileName) {
+    return streamBase + '?folder_name=' + encodeURIComponent(folderName) + '&file_name=' + encodeURIComponent(fileName);
+  }
+
+  btnLoad.addEventListener('click', function() {
+    const pid = patientSelect.value;
+    if (!pid) {
+      errorEl.textContent = 'Please select a patient.';
+      return;
+    }
+    errorEl.textContent = '';
+    mediaList.innerHTML = '';
+    loading.style.display = 'block';
+
+    fetch(listUrl + '?pid=' + encodeURIComponent(pid), {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin'
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        loading.style.display = 'none';
+        if (data.error) {
+          errorEl.textContent = data.error;
+          return;
+        }
+        const patientName = data.patient_name || '';
+        const folders = data.folders || [];
+        if (folders.length === 0) {
+          mediaList.innerHTML = '<p>No result folders found for this patient.</p>';
+          return;
+        }
+        let html = '<h3>Patient: ' + (patientName || pid) + '</h3>';
+        folders.forEach(function(fo) {
+          const folderPath = patientName + '/' + fo.folder;
+          html += '<div class="media-folder" style="margin-bottom: 2rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">';
+          html += '<h4 style="margin-top: 0;">📁 ' + fo.folder + '</h4>';
+          (fo.files || []).forEach(function(file) {
+            const url = streamUrl(folderPath, file);
+            if (isVideo(file)) {
+              html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
+              html += '<video controls preload="metadata" style="max-width: 100%; max-height: 400px;" src="' + url + '">Your browser does not support video.</video></div>';
+            } else if (isAudio(file)) {
+              html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
+              html += '<audio controls preload="metadata" src="' + url + '">Your browser does not support audio.</audio></div>';
+            } else if (isImage(file)) {
+              html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
+              html += '<img src="' + url + '" alt="' + file + '" style="max-width: 100%; max-height: 400px;" /></div>';
+            } else {
+              html += '<p><a href="' + url + '" download="' + file + '">' + file + '</a> (download)</p>';
+            }
+          });
+          html += '</div>';
+        });
+        mediaList.innerHTML = html;
+      })
+      .catch(function(err) {
+        loading.style.display = 'none';
+        errorEl.textContent = 'Failed to load: ' + err.message;
+      });
+  });
+})();
+</script>
+{% endblock %}

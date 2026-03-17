@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.http import HttpResponseRedirect, FileResponse
+from django.http import HttpResponseRedirect, FileResponse, JsonResponse, HttpResponseBadRequest
 from django.urls import path, reverse
 from django.contrib import messages
 from django.template.response import TemplateResponse
@@ -50,6 +50,9 @@ class CustomAdminSite(admin.AdminSite):
             path('backend-functions/rerun-predictions/', self.admin_view(self.rerun_predictions), name="rerun-predictions"),
             path('backend-functions/download-data/', self.admin_view(self.download_data_view), name="download-data"),
             path('backend-functions/view-logs/', self.admin_view(self.view_logs_view), name="view-logs"),
+            path('backend-functions/play-media/', self.admin_view(self.play_media_view), name="play-media"),
+            path('backend-functions/play-media/list/', self.admin_view(self.play_media_list_view), name="play-media-list"),
+            path('backend-functions/play-media/stream/', self.admin_view(self.play_media_stream_view), name="play-media-stream"),
             path('api/patient/<int:patient_id>/rerun/', self.admin_view(self.rerun_single_patient), name="rerun-patient"),
         
             # (you can add more backend function URLs here)
@@ -167,6 +170,60 @@ class CustomAdminSite(admin.AdminSite):
             log_content=log_content,
         )
         return TemplateResponse(request, "admin/view_logs.html", context)
+
+    def play_media_view(self, request):
+        """Dashboard page to list and play video/audio from results (session auth)."""
+        patients = Patient.objects.all().order_by('name')
+        context = dict(
+            self.each_context(request),
+            title="Play Video / Audio",
+            patients=patients,
+            play_media_list_url=reverse('admin:play-media-list'),
+            play_media_stream_url=reverse('admin:play-media-stream'),
+        )
+        return TemplateResponse(request, "admin/play_media.html", context)
+
+    def play_media_list_view(self, request):
+        """JSON: list result folders and files for a patient (for admin play-media page)."""
+        from .views import RESULTS_MEDIA_ROOT
+        pid = request.GET.get('pid')
+        if not pid:
+            return JsonResponse({"error": "pid is required"}, status=400)
+        try:
+            p = Patient.objects.get(patientId=int(pid))
+        except (Patient.DoesNotExist, ValueError):
+            return JsonResponse({"error": "Patient not found"}, status=404)
+        name = p.name
+        root = os.path.abspath(os.path.join(RESULTS_MEDIA_ROOT, name))
+        if not os.path.isdir(root):
+            return JsonResponse({"patient_name": name, "folders": []})
+        folders = []
+        for entry in sorted(os.listdir(root)):
+            path = os.path.join(root, entry)
+            if not os.path.isdir(path):
+                continue
+            files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+            folders.append({"folder": entry, "files": sorted(files)})
+        return JsonResponse({"patient_name": name, "folders": folders})
+
+    def play_media_stream_view(self, request):
+        """Stream a single file from results (for <video>/<audio> src with session cookie)."""
+        from .views import RESULTS_MEDIA_ROOT, _content_type_for_file
+        folder_name = (request.GET.get('folder_name') or '').strip()
+        file_name = (request.GET.get('file_name') or '').strip()
+        if not file_name or not folder_name:
+            return HttpResponseBadRequest("folder_name and file_name are required")
+        if '..' in file_name or '..' in folder_name or '\\' in file_name or '/' in file_name:
+            return HttpResponseBadRequest("Invalid path")
+        root = os.path.abspath(RESULTS_MEDIA_ROOT)
+        full_path = os.path.normpath(os.path.join(root, folder_name, file_name))
+        if not full_path.startswith(root + os.sep) and full_path != root:
+            return HttpResponseBadRequest("Invalid path")
+        if not os.path.isfile(full_path):
+            return JsonResponse({"error": "File not found"}, status=404)
+        content_type = _content_type_for_file(file_name)
+        with open(full_path, 'rb') as f:
+            return FileResponse(f, content_type=content_type)
 
     
 
