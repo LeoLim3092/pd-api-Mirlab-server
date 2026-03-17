@@ -94,7 +94,14 @@ def extract_hand_features_for_id(pid: str, fps: int = 59, debug: bool = False) -
     )
 
     features = np.asarray(features, dtype=float)
+
+    # Save per-ID feature file under its own subdirectory
     np.save(os.path.join(out_dir, "hand_feature.npy"), features)
+
+    # Also save a flat copy directly under BASE_RESULT_DIR for convenience:
+    #   /mnt/other/results/hand_feature_<ID>.npy
+    base_feature_name = f"hand_feature_{pid}.npy"
+    np.save(os.path.join(BASE_RESULT_DIR, base_feature_name), features)
 
     return features
 
