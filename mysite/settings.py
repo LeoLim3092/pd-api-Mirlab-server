@@ -161,9 +161,18 @@ SIMPLE_JWT = {
 DEFAULT_CHARSET = 'utf-8'
 
 
+# Only use file handler if we can write to django.log (avoids PermissionError when e.g. pdapp runs migrate)
+_django_log_path = os.path.join(BASE_DIR, 'django.log')
+try:
+    with open(_django_log_path, 'a'):
+        pass
+    _can_write_log = True
+except (OSError, PermissionError):
+    _can_write_log = False
+
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': False, 
+    'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {message}',
@@ -176,16 +185,21 @@ LOGGING = {
     },
     'handlers': {
         'file': {
-            'level': 'DEBUG',  # Save DEBUG and above
+            'level': 'DEBUG',
             'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'django.log'),  # logs saved to BASE_DIR/django.log
+            'filename': _django_log_path,
+            'formatter': 'verbose'
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
             'formatter': 'verbose'
         },
     },
     'loggers': {
         'django': {
-            'handlers': ['file'],
-            'level': 'DEBUG',   # Collect everything: DEBUG, INFO, WARNING, ERROR, CRITICAL
+            'handlers': ['file'] if _can_write_log else ['console'],
+            'level': 'DEBUG',
             'propagate': True,
         },
     },
