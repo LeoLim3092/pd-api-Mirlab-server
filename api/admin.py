@@ -13,6 +13,8 @@ import requests
 import zipfile
 import io
 import os
+import time
+from django.core.signing import Signer, BadSignature
 from .models import Patient, Article, PatientRecord, FileUploaded, Results, PatientQuestionaireRecord
 import logging
 from django.contrib.auth.models import Group, User
@@ -36,6 +38,39 @@ FILE_TYPE_STORAGE_PATHS = {
     'three': '/mnt/pd_app/paint/three/right',
     'questionnaires': '/mnt/pd_app/results',  # or if you save JSON here
 }
+
+# -----------------------------
+# Stream token for video/audio (so <video src="..."> works when cookie isn't sent)
+# -----------------------------
+STREAM_TOKEN_MAX_AGE = 600  # seconds
+
+def _make_stream_token(request):
+    if not getattr(request, 'user', None) or not request.user.is_authenticated:
+        return None
+    signer = Signer(key=settings.SECRET_KEY)
+    payload = {'user_id': request.user.pk, 'exp': int(time.time()) + STREAM_TOKEN_MAX_AGE}
+    import json
+    return signer.sign(json.dumps(payload))
+
+def _can_access_stream(request):
+    if getattr(request, 'user', None) and request.user.is_authenticated and request.user.is_staff:
+        return True
+    token = (request.GET.get('stream_token') or '').strip()
+    if not token:
+        return False
+    signer = Signer(key=settings.SECRET_KEY)
+    import json
+    try:
+        data = json.loads(signer.unsign(token))
+        if data.get('exp', 0) < int(time.time()):
+            return False
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.filter(pk=data.get('user_id')).first()
+        return user is not None and user.is_staff
+    except (BadSignature, ValueError, TypeError):
+        return False
+
 
 # -----------------------------
 # Custom Admin Site
@@ -199,7 +234,7 @@ class CustomAdminSite(admin.AdminSite):
         name = p.name
         root = os.path.abspath(os.path.join(RESULTS_MEDIA_ROOT, name))
         if not os.path.isdir(root):
-            return JsonResponse({"patient_name": name, "folders": []})
+            return JsonResponse({"patient_name": name, "folders": [], "stream_token": _make_stream_token(request)})
         folders = []
         for entry in sorted(os.listdir(root)):
             path = os.path.join(root, entry)
@@ -207,11 +242,17 @@ class CustomAdminSite(admin.AdminSite):
                 continue
             files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
             folders.append({"folder": entry, "files": sorted(files)})
-        return JsonResponse({"patient_name": name, "folders": folders})
+        return JsonResponse({
+            "patient_name": name,
+            "folders": folders,
+            "stream_token": _make_stream_token(request),
+        })
 
     def play_media_stream_view(self, request):
         """Stream a single file from results with Range support (so <video>/<audio> can load)."""
         from .views import RESULTS_MEDIA_ROOT, _content_type_for_file
+        if not _can_access_stream(request):
+            return HttpResponseRedirect(reverse('admin:login') + '?next=' + request.get_full_path())
         folder_name = (request.GET.get('folder_name') or '').strip()
         file_name = (request.GET.get('file_name') or '').strip()
         if not file_name or not folder_name:

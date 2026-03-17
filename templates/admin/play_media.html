@@ -44,8 +44,10 @@
   function isAudio(f) { return audioExt.includes(ext(f)); }
   function isImage(f) { return imageExt.includes(ext(f)); }
 
-  function streamUrl(folderName, fileName) {
-    return streamBase + '?folder_name=' + encodeURIComponent(folderName) + '&file_name=' + encodeURIComponent(fileName);
+  function streamUrl(folderName, fileName, streamToken) {
+    let u = streamBase + '?folder_name=' + encodeURIComponent(folderName) + '&file_name=' + encodeURIComponent(fileName);
+    if (streamToken) u += '&stream_token=' + encodeURIComponent(streamToken);
+    return u;
   }
 
   btnLoad.addEventListener('click', function() {
@@ -76,13 +78,14 @@
           mediaList.innerHTML = '<p>No result folders found for this patient.</p>';
           return;
         }
+        const streamToken = data.stream_token || '';
         let html = '<h3>Patient: ' + (patientName || pid) + '</h3>';
         folders.forEach(function(fo) {
           const folderPath = patientName + '/' + fo.folder;
           html += '<div class="media-folder" style="margin-bottom: 2rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">';
           html += '<h4 style="margin-top: 0;">📁 ' + fo.folder + '</h4>';
           (fo.files || []).forEach(function(file) {
-            const url = streamUrl(folderPath, file);
+            const url = streamUrl(folderPath, file, streamToken);
             if (isVideo(file)) {
               html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
               html += '<video controls preload="metadata" style="max-width: 100%; max-height: 400px;" src="' + url + '">Your browser does not support video.</video></div>';
