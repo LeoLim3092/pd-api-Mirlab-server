@@ -27,6 +27,10 @@ import datetime
 
 logger = logging.getLogger('django')
 
+# Upload media roots (same as api/views base_path)
+UPLOAD_MEDIA_ROOT = '/mnt/pd_app'
+UPLOAD_SUBFOLDERS = {'gait': 'walk', 'left_hand': 'gesture', 'right_hand': 'gesture', 'sound': 'sound'}
+
 # Mapping between file_type and base folder
 FILE_TYPE_STORAGE_PATHS = {
     'sound': '/mnt/pd_app/sound',
@@ -261,9 +265,8 @@ class CustomAdminSite(admin.AdminSite):
         return TemplateResponse(request, "admin/play_media.html", context)
 
     def play_media_list_view(self, request):
-        """JSON: list result folders and files for a patient (for admin play-media page)."""
+        """JSON: latest upload per type (gait, left_hand, right_hand, sound) for selected patient."""
         print("[play-media] list_view: entry")
-        from .views import RESULTS_MEDIA_ROOT
         pid = request.GET.get('pid')
         print("[play-media] list_view: pid=%s" % pid)
         if not pid:
@@ -275,41 +278,32 @@ class CustomAdminSite(admin.AdminSite):
             print("[play-media] list_view: patient not found (%s), 404" % e)
             return JsonResponse({"error": "Patient not found"}, status=404)
         name = p.name
-        root = os.path.abspath(os.path.join(RESULTS_MEDIA_ROOT, name))
-        print("[play-media] list_view: name=%s root=%s isdir=%s" % (name, root, os.path.isdir(root)))
-        if not os.path.isdir(root):
-            tok = _make_stream_token(request)
-            print("[play-media] list_view: no dir, return empty folders, stream_token=%s" % bool(tok))
-            return JsonResponse({"patient_name": name, "folders": [], "stream_token": tok})
-        folders = []
-        for entry in sorted(os.listdir(root)):
-            path = os.path.join(root, entry)
-            if not os.path.isdir(path):
-                continue
-            raw_files = sorted([f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))])
-            files = []
-            for f in raw_files:
-                low = f.lower()
-                if low.endswith('.mp4') and not low.endswith('_web.mp4'):
-                    base = f[:-4]  # without .mp4
-                    web_name = base + '_web.mp4'
-                    web_path = os.path.join(path, web_name)
-                    play_name = web_name if os.path.isfile(web_path) else None
-                    files.append({"name": f, "play_name": play_name})
-                else:
-                    files.append({"name": f, "play_name": None})
-            folders.append({"folder": entry, "files": files})
-        tok = _make_stream_token(request)
-        print("[play-media] list_view: returning %d folders, stream_token=%s" % (len(folders), bool(tok)))
-        return JsonResponse({
-            "patient_name": name,
-            "folders": folders,
-            "stream_token": tok,
-        })
+        out = {"patient_name": name, "stream_token": _make_stream_token(request)}
+
+        def latest_for_type(ft):
+            rec = FileUploaded.objects.filter(patientId=p, file_type=ft).order_by('-upload_time').first()
+            if not rec:
+                return None
+            sub = UPLOAD_SUBFOLDERS.get(ft, '')
+            base_dir = os.path.join(UPLOAD_MEDIA_ROOT, sub)
+            full = os.path.normpath(os.path.join(base_dir, rec.file_path))
+            if not full.startswith(os.path.abspath(base_dir) + os.sep) and full != os.path.abspath(base_dir):
+                return None
+            has_web = False
+            if ft in ('gait', 'left_hand', 'right_hand') and rec.file_path.lower().endswith('.mp4'):
+                dir_path = os.path.dirname(full)
+                base_name = os.path.splitext(os.path.basename(full))[0]
+                web_path = os.path.join(dir_path, base_name + '_web.mp4')
+                has_web = os.path.isfile(web_path)
+            return {"file_path": rec.file_path, "has_web": has_web}
+
+        for key in ('gait', 'left_hand', 'right_hand', 'sound'):
+            out[key] = latest_for_type(key)
+        print("[play-media] list_view: returning latest 4 media, stream_token=%s" % bool(out["stream_token"]))
+        return JsonResponse(out)
 
     def reencode_media_view(self, request):
-        """Re-encode patient's MP4s to H.264 for browser playback. POST with pid."""
-        from .views import RESULTS_MEDIA_ROOT
+        """Re-encode patient's latest upload videos (gait, left_hand, right_hand) to H.264 in same folder. POST with pid."""
         if request.method != 'POST':
             return JsonResponse({"error": "POST required"}, status=405)
         pid = request.POST.get('pid') or request.GET.get('pid')
@@ -326,34 +320,31 @@ class CustomAdminSite(admin.AdminSite):
             p = Patient.objects.get(patientId=int(pid))
         except (Patient.DoesNotExist, ValueError):
             return JsonResponse({"error": "Patient not found"}, status=404)
-        name = p.name
-        root = os.path.abspath(os.path.join(RESULTS_MEDIA_ROOT, name))
-        if not os.path.isdir(root):
-            return JsonResponse({"encoded": 0, "skipped": 0, "failed": [], "message": "No result folders"})
         encoded = 0
         skipped = 0
         failed = []
-        for entry in sorted(os.listdir(root)):
-            dir_path = os.path.join(root, entry)
-            if not os.path.isdir(dir_path):
+        for media_type in ('gait', 'left_hand', 'right_hand'):
+            rec = FileUploaded.objects.filter(patientId=p, file_type=media_type).order_by('-upload_time').first()
+            if not rec or not rec.file_path.lower().endswith('.mp4'):
                 continue
-            for f in os.listdir(dir_path):
-                if not f.lower().endswith('.mp4') or f.lower().endswith('_web.mp4'):
-                    continue
-                src = os.path.join(dir_path, f)
-                if not os.path.isfile(src):
-                    continue
-                base = f[:-4]
-                web_name = base + '_web.mp4'
-                dst = os.path.join(dir_path, web_name)
-                if os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
-                    skipped += 1
-                    continue
-                ok, err = _reencode_mp4_for_browser(src, dst)
-                if ok:
-                    encoded += 1
-                else:
-                    failed.append({"file": f, "error": err[:200] if err else "unknown"})
+            sub = UPLOAD_SUBFOLDERS.get(media_type, '')
+            base_dir = os.path.join(UPLOAD_MEDIA_ROOT, sub)
+            src = os.path.normpath(os.path.join(base_dir, rec.file_path))
+            if not os.path.isfile(src):
+                failed.append({"file": rec.file_path, "error": "file not found"})
+                continue
+            dir_path = os.path.dirname(src)
+            base_name = os.path.splitext(os.path.basename(src))[0]
+            web_name = base_name + '_web.mp4'
+            dst = os.path.join(dir_path, web_name)
+            if os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+                skipped += 1
+                continue
+            ok, err = _reencode_mp4_for_browser(src, dst)
+            if ok:
+                encoded += 1
+            else:
+                failed.append({"file": rec.file_path, "error": (err or "unknown")[:200]})
         return JsonResponse({
             "encoded": encoded,
             "skipped": skipped,
@@ -362,32 +353,61 @@ class CustomAdminSite(admin.AdminSite):
         })
 
     def play_media_stream_view(self, request):
-        """Stream a single file from results with Range support (so <video>/<audio> can load)."""
+        """Stream a single file: from upload (source=upload, pid, type) or from results (folder_name, file_name)."""
         print("[play-media] stream_view: entry")
         from .views import RESULTS_MEDIA_ROOT, _content_type_for_file
         if not _can_access_stream(request):
             print("[play-media] stream_view: access denied, redirect to login")
             return HttpResponseRedirect(reverse('admin:login') + '?next=' + request.get_full_path())
         print("[play-media] stream_view: access OK")
-        folder_name = (request.GET.get('folder_name') or '').strip()
-        file_name = (request.GET.get('file_name') or '').strip()
-        print("[play-media] stream_view: folder_name=%r file_name=%r" % (folder_name[:50] if len(folder_name) > 50 else folder_name, file_name[:50] if len(file_name) > 50 else file_name))
-        if not file_name or not folder_name:
-            print("[play-media] stream_view: missing folder_name or file_name, 400")
-            return HttpResponseBadRequest("folder_name and file_name are required")
-        if '..' in file_name or '..' in folder_name or '\\' in file_name or '/' in file_name:
-            print("[play-media] stream_view: invalid path chars, 400")
-            return HttpResponseBadRequest("Invalid path")
-        root = os.path.abspath(RESULTS_MEDIA_ROOT)
-        full_path = os.path.normpath(os.path.join(root, folder_name, file_name))
-        print("[play-media] stream_view: root=%s full_path=%s" % (root, full_path))
-        if not full_path.startswith(root + os.sep) and full_path != root:
-            print("[play-media] stream_view: path outside root, 400")
-            return HttpResponseBadRequest("Invalid path")
+
+        source = (request.GET.get('source') or '').strip().lower()
+        if source == 'upload':
+            pid = request.GET.get('pid', '').strip()
+            media_type = (request.GET.get('type') or '').strip().lower()
+            prefer_web = request.GET.get('prefer_web', '1') == '1'
+            if not pid or media_type not in ('gait', 'left_hand', 'right_hand', 'sound'):
+                return HttpResponseBadRequest("source=upload requires pid and type (gait|left_hand|right_hand|sound)")
+            try:
+                p = Patient.objects.get(patientId=int(pid))
+            except (Patient.DoesNotExist, ValueError):
+                return JsonResponse({"error": "Patient not found"}, status=404)
+            rec = FileUploaded.objects.filter(patientId=p, file_type=media_type).order_by('-upload_time').first()
+            if not rec:
+                return JsonResponse({"error": "No upload for this type"}, status=404)
+            sub = UPLOAD_SUBFOLDERS.get(media_type, '')
+            base_dir = os.path.abspath(os.path.join(UPLOAD_MEDIA_ROOT, sub))
+            full_path = os.path.normpath(os.path.join(base_dir, rec.file_path))
+            if not full_path.startswith(base_dir + os.sep) and full_path != base_dir:
+                return HttpResponseBadRequest("Invalid path")
+            if media_type != 'sound' and prefer_web and rec.file_path.lower().endswith('.mp4'):
+                dir_path = os.path.dirname(full_path)
+                base_name = os.path.splitext(os.path.basename(full_path))[0]
+                web_path = os.path.join(dir_path, base_name + '_web.mp4')
+                if os.path.isfile(web_path):
+                    full_path = web_path
+        else:
+            folder_name = (request.GET.get('folder_name') or '').strip()
+            file_name = (request.GET.get('file_name') or '').strip()
+            print("[play-media] stream_view: folder_name=%r file_name=%r" % (folder_name[:50] if len(folder_name) > 50 else folder_name, file_name[:50] if len(file_name) > 50 else file_name))
+            if not file_name or not folder_name:
+                print("[play-media] stream_view: missing folder_name or file_name, 400")
+                return HttpResponseBadRequest("folder_name and file_name are required")
+            if '..' in file_name or '..' in folder_name or '\\' in file_name or '/' in file_name:
+                print("[play-media] stream_view: invalid path chars, 400")
+                return HttpResponseBadRequest("Invalid path")
+            root = os.path.abspath(RESULTS_MEDIA_ROOT)
+            full_path = os.path.normpath(os.path.join(root, folder_name, file_name))
+            print("[play-media] stream_view: root=%s full_path=%s" % (root, full_path))
+            if not full_path.startswith(root + os.sep) and full_path != root:
+                print("[play-media] stream_view: path outside root, 400")
+                return HttpResponseBadRequest("Invalid path")
+
+        file_name_for_ct = os.path.basename(full_path)
         if not os.path.isfile(full_path):
             print("[play-media] stream_view: file not found, 404")
             return JsonResponse({"error": "File not found"}, status=404)
-        content_type = _content_type_for_file(file_name)
+        content_type = _content_type_for_file(file_name_for_ct)
         file_size = os.path.getsize(full_path)
         range_header = request.META.get('HTTP_RANGE', '').strip()
         print("[play-media] stream_view: content_type=%s file_size=%s HTTP_RANGE=%r" % (content_type, file_size, range_header[:50] if range_header else ''))

@@ -1,7 +1,7 @@
 {% extends "admin/base_site.html" %}
 {% block content %}
 <h1>▶️ Play Video / Audio</h1>
-<p>Select a patient to list result folders and play media from <code>/mnt/pd_app/results</code>.</p>
+<p>Select a patient to load their <strong>latest uploads</strong> (gait, left hand, right hand, audio) from the upload folders. Re-encode creates browser-friendly copies in the same folder when needed.</p>
 
 <div style="margin-bottom: 1.5rem;">
   <label for="patient-select"><strong>Patient:</strong></label>
@@ -11,14 +11,36 @@
     <option value="{{ p.patientId }}">{{ p.name }} (ID: {{ p.patientId }})</option>
     {% endfor %}
   </select>
-  <button type="button" id="btn-load" class="button" style="margin-left: 12px;">Load media list</button>
-  <button type="button" id="btn-reencode" class="button" style="margin-left: 8px;" title="Re-encode MP4s to H.264 for browser playback">Re-encode videos for browser</button>
+  <button type="button" id="btn-load" class="button" style="margin-left: 12px;">Load latest media</button>
+  <button type="button" id="btn-reencode" class="button" style="margin-left: 8px;" title="Re-encode latest gait/left/right videos to H.264 in same folder">Re-encode videos for browser</button>
 </div>
 
 <div id="loading" style="display: none;">Loading…</div>
 <div id="reencode-status" style="margin-bottom: 0.5rem;"></div>
 <div id="error" style="color: red; margin-bottom: 1rem;"></div>
-<div id="media-list"></div>
+
+<div id="media-grid" style="display: none;">
+  <h3 id="media-patient-name" style="margin-bottom: 1rem;"></h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+    <div class="media-section" style="padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">
+      <h4 style="margin-top: 0;">🦶 Gait</h4>
+      <div id="media-gait"></div>
+    </div>
+    <div class="media-section" style="padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">
+      <h4 style="margin-top: 0;">✋ Left hand</h4>
+      <div id="media-left-hand"></div>
+    </div>
+    <div class="media-section" style="padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">
+      <h4 style="margin-top: 0;">✋ Right hand</h4>
+      <div id="media-right-hand"></div>
+    </div>
+    <div class="media-section" style="padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">
+      <h4 style="margin-top: 0;">🔊 Audio</h4>
+      <div id="media-sound"></div>
+    </div>
+  </div>
+</div>
+<div id="media-empty" style="display: none; color: #666;">No media found for this patient. Upload gait, left/right hand, and audio first.</div>
 
 <hr style="margin: 2rem 0;">
 <a class="button" href="{% url 'admin:backend-functions' %}">⬅️ Back to Backend Functions</a>
@@ -29,28 +51,39 @@
   const btnLoad = document.getElementById('btn-load');
   const loading = document.getElementById('loading');
   const errorEl = document.getElementById('error');
-  const mediaList = document.getElementById('media-list');
+  const mediaGrid = document.getElementById('media-grid');
+  const mediaEmpty = document.getElementById('media-empty');
+  const mediaPatientName = document.getElementById('media-patient-name');
+  const mediaGait = document.getElementById('media-gait');
+  const mediaLeftHand = document.getElementById('media-left-hand');
+  const mediaRightHand = document.getElementById('media-right-hand');
+  const mediaSound = document.getElementById('media-sound');
 
   const listUrl = "{{ play_media_list_url|escapejs }}";
   const streamBase = "{{ play_media_stream_url|escapejs }}";
   const reencodeUrl = "{{ play_media_reencode_url|escapejs }}";
 
-  const videoExt = ['mp4', 'webm', 'mov'];
-  const audioExt = ['wav', 'mp3', 'm4a', 'ogg'];
-  const imageExt = ['png', 'jpg', 'jpeg', 'gif'];
-
-  function ext(f) {
-    const i = f.lastIndexOf('.');
-    return i >= 0 ? f.slice(i + 1).toLowerCase() : '';
-  }
-  function isVideo(f) { return videoExt.includes(ext(f)); }
-  function isAudio(f) { return audioExt.includes(ext(f)); }
-  function isImage(f) { return imageExt.includes(ext(f)); }
-
-  function streamUrl(folderName, fileName, streamToken) {
-    let u = streamBase + '?folder_name=' + encodeURIComponent(folderName) + '&file_name=' + encodeURIComponent(fileName);
+  function streamUrlUpload(pid, type, streamToken) {
+    let u = streamBase + '?source=upload&pid=' + encodeURIComponent(pid) + '&type=' + encodeURIComponent(type) + '&prefer_web=1';
     if (streamToken) u += '&stream_token=' + encodeURIComponent(streamToken);
     return u;
+  }
+
+  function renderOne(type, container, data, pid, streamToken) {
+    if (!data || !data.file_path) {
+      container.innerHTML = '<p class="no-file" style="color: #888;">No file</p>';
+      return;
+    }
+    const url = streamUrlUpload(pid, type, streamToken);
+    const name = data.file_path.split(/[/\\]/).pop();
+    const isVideo = type !== 'sound';
+    if (isVideo) {
+      container.innerHTML = '<p><strong>' + name + (data.has_web ? ' (browser version)' : '') + '</strong></p>' +
+        '<video controls preload="metadata" style="max-width: 100%; max-height: 360px;" src="' + url + '">Your browser does not support video.</video>';
+    } else {
+      container.innerHTML = '<p><strong>' + name + '</strong></p>' +
+        '<audio controls preload="metadata" src="' + url + '">Your browser does not support audio.</audio>';
+    }
   }
 
   btnLoad.addEventListener('click', function() {
@@ -60,7 +93,8 @@
       return;
     }
     errorEl.textContent = '';
-    mediaList.innerHTML = '';
+    mediaGrid.style.display = 'none';
+    mediaEmpty.style.display = 'none';
     loading.style.display = 'block';
 
     fetch(listUrl + '?pid=' + encodeURIComponent(pid), {
@@ -75,39 +109,20 @@
           errorEl.textContent = data.error;
           return;
         }
-        const patientName = data.patient_name || '';
-        const folders = data.folders || [];
-        if (folders.length === 0) {
-          mediaList.innerHTML = '<p>No result folders found for this patient.</p>';
+        const patientName = data.patient_name || ('Patient ' + pid);
+        const streamToken = data.stream_token || '';
+        const hasAny = data.gait || data.left_hand || data.right_hand || data.sound;
+        if (!hasAny) {
+          mediaEmpty.style.display = 'block';
+          mediaEmpty.textContent = 'No media found for this patient. Upload gait, left/right hand, and audio first.';
           return;
         }
-        const streamToken = data.stream_token || '';
-        let html = '<h3>Patient: ' + (patientName || pid) + '</h3>';
-        folders.forEach(function(fo) {
-          const folderPath = patientName + '/' + fo.folder;
-          html += '<div class="media-folder" style="margin-bottom: 2rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">';
-          html += '<h4 style="margin-top: 0;">📁 ' + fo.folder + '</h4>';
-          (fo.files || []).forEach(function(file) {
-            const fileName = typeof file === 'object' && file !== null ? file.name : file;
-            const playName = typeof file === 'object' && file !== null ? (file.play_name || file.name) : file;
-            const url = streamUrl(folderPath, playName, streamToken);
-            const label = playName !== fileName ? fileName + ' (browser version)' : fileName;
-            if (isVideo(fileName) || isVideo(playName)) {
-              html += '<div style="margin-bottom: 1rem;"><p><strong>' + label + '</strong></p>';
-              html += '<video controls preload="metadata" style="max-width: 100%; max-height: 400px;" src="' + url + '">Your browser does not support video.</video></div>';
-            } else if (isAudio(fileName)) {
-              html += '<div style="margin-bottom: 1rem;"><p><strong>' + fileName + '</strong></p>';
-              html += '<audio controls preload="metadata" src="' + url + '">Your browser does not support audio.</audio></div>';
-            } else if (isImage(fileName)) {
-              html += '<div style="margin-bottom: 1rem;"><p><strong>' + fileName + '</strong></p>';
-              html += '<img src="' + url + '" alt="' + fileName + '" style="max-width: 100%; max-height: 400px;" /></div>';
-            } else {
-              html += '<p><a href="' + url + '" download="' + fileName + '">' + fileName + '</a> (download)</p>';
-            }
-          });
-          html += '</div>';
-        });
-        mediaList.innerHTML = html;
+        mediaPatientName.textContent = 'Patient: ' + patientName;
+        renderOne('gait', mediaGait, data.gait, pid, streamToken);
+        renderOne('left_hand', mediaLeftHand, data.left_hand, pid, streamToken);
+        renderOne('right_hand', mediaRightHand, data.right_hand, pid, streamToken);
+        renderOne('sound', mediaSound, data.sound, pid, streamToken);
+        mediaGrid.style.display = 'block';
       })
       .catch(function(err) {
         loading.style.display = 'none';
@@ -144,9 +159,9 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         btnReencode.disabled = false;
-        reencodeStatus.style.color = data.failed && data.failed.length ? 'orange' : 'green';
+        reencodeStatus.style.color = (data.failed && data.failed.length) ? 'orange' : 'green';
         reencodeStatus.textContent = data.message || ('Encoded: ' + (data.encoded || 0) + ', skipped: ' + (data.skipped || 0) + ', failed: ' + (data.failed || []).length);
-        if (data.encoded > 0) btnLoad.click();
+        if ((data.encoded || 0) > 0) btnLoad.click();
       })
       .catch(function(err) {
         btnReencode.disabled = false;
