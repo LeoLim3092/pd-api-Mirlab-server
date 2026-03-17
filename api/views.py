@@ -9,7 +9,10 @@ from .pdModel.deployModel import features_extraction, extract_gait, extract_hand
 
 from django.shortcuts import render, redirect
 from django.contrib.auth.models import User, Group
-from django.http import HttpResponse, HttpResponseRedirect, HttpResponseBadRequest, FileResponse, JsonResponse
+from django.http import (
+    HttpResponse, HttpResponseRedirect, HttpResponseBadRequest,
+    FileResponse, JsonResponse, StreamingHttpResponse,
+)
 from django.core.handlers.wsgi import WSGIRequest
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import csrf_exempt
@@ -622,11 +625,17 @@ def _serve_media_file(folder_name, file_name, request=None):
         response['Content-Length'] = str(len(data))
         response['Accept-Ranges'] = 'bytes'
         return response
-    # Do not use "with open": FileResponse reads lazily, so the file must stay open until sent.
-    f = open(full_path, 'rb')
-    response = FileResponse(f, content_type=content_type)
+    # Stream file in chunks so WSGI never sees a closed file handle.
+    def _stream_file():
+        with open(full_path, 'rb') as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+    response = StreamingHttpResponse(_stream_file(), content_type=content_type)
+    response['Content-Length'] = str(file_size)
     response['Accept-Ranges'] = 'bytes'
-    response['Content-Length'] = file_size
     return response
 
 

@@ -1,5 +1,8 @@
 from django.contrib import admin
-from django.http import HttpResponseRedirect, FileResponse, JsonResponse, HttpResponseBadRequest, HttpResponse
+from django.http import (
+    HttpResponseRedirect, FileResponse, JsonResponse, HttpResponseBadRequest,
+    HttpResponse, StreamingHttpResponse,
+)
 from django.urls import path, reverse
 from django.contrib import messages
 from django.template.response import TemplateResponse
@@ -240,15 +243,20 @@ class CustomAdminSite(admin.AdminSite):
                 data = f.read(length)
             response = HttpResponse(data, status=206, content_type=content_type)
             response['Content-Range'] = 'bytes %d-%d/%d' % (start, end, file_size)
-            response['Content-Length'] = len(data)
+            response['Content-Length'] = str(len(data))
             response['Accept-Ranges'] = 'bytes'
             return response
-        # No Range: return full file and advertise range support.
-        # Do not use "with open": FileResponse reads lazily, so the file must stay open until sent.
-        f = open(full_path, 'rb')
-        response = FileResponse(f, content_type=content_type)
+        # No Range: stream file in chunks so WSGI never sees a closed file handle.
+        def _stream_file():
+            with open(full_path, 'rb') as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+        response = StreamingHttpResponse(_stream_file(), content_type=content_type)
+        response['Content-Length'] = str(file_size)
         response['Accept-Ranges'] = 'bytes'
-        response['Content-Length'] = file_size
         return response
 
     
