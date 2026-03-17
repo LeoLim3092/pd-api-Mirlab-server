@@ -20,13 +20,19 @@ git fetch origin
 echo "==> Pulling branch: $BRANCH"
 git pull origin "$BRANCH"
 
+# Use venv Python explicitly (avoids using system Python 2 when script is run with sudo)
+PYTHON_CMD="python"
 if [ -n "$VENV_ACTIVATE" ] && [ -f "$VENV_ACTIVATE" ]; then
   echo "==> Activating virtualenv..."
   source "$VENV_ACTIVATE"
+  VENV_BIN="$(dirname "$VENV_ACTIVATE")"
+  if [ -x "$VENV_BIN/python" ]; then
+    PYTHON_CMD="$VENV_BIN/python"
+  fi
 fi
 
 echo "==> Running migrations..."
-python manage.py migrate --noinput
+"$PYTHON_CMD" manage.py migrate --noinput
 
 if [ -n "$RESTART_CMD" ]; then
   echo "==> Restarting application..."
