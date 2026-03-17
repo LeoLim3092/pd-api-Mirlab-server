@@ -4,6 +4,7 @@ import joblib
 import numpy as np
 import cv2
 import ast
+from typing import Tuple, List
 
 from .handExtraction import hand_extraction
 from . import handFeaturesExtraction
@@ -36,7 +37,7 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def build_video_paths(pid: str) -> tuple[str, str]:
+def build_video_paths(pid: str) -> Tuple[str, str]:
     """
     Build left/right hand video paths for a given ID.
 
@@ -47,7 +48,7 @@ def build_video_paths(pid: str) -> tuple[str, str]:
     return left_video, right_video
 
 
-def extract_hand_landmarks_for_id(pid: str) -> tuple[str, str]:
+def extract_hand_landmarks_for_id(pid: str) -> Tuple[str, str]:
     """
     Run MediaPipe hand landmark extraction for a single ID.
 
@@ -158,7 +159,7 @@ def predict_hand_from_features(
 
 
 def run_batch_hand_prediction(
-    id_list: list[tuple[str, float, float]],
+    id_list: List[Tuple[str, float, float]],
     debug: bool = False,
 ) -> dict:
     """
