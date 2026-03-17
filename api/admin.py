@@ -14,6 +14,8 @@ import zipfile
 import io
 import os
 import time
+import subprocess
+import shutil
 from django.core.signing import Signer, BadSignature
 from .models import Patient, Article, PatientRecord, FileUploaded, Results, PatientQuestionaireRecord
 import logging
@@ -55,6 +57,28 @@ def _make_stream_token(request):
     token = signer.sign(json.dumps(payload))
     print("[play-media] _make_stream_token: token created for user_id=%s" % request.user.pk)
     return token
+
+def _reencode_mp4_for_browser(src_path, dst_path, timeout=120):
+    """Re-encode MP4 to H.264 + AAC with faststart for browser playback. Returns (True, None) or (False, error_msg)."""
+    if not shutil.which('ffmpeg'):
+        return False, "ffmpeg not installed"
+    try:
+        cmd = [
+            'ffmpeg', '-y', '-i', src_path,
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart',
+            dst_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            return False, (result.stderr or result.stdout or '')[-500:]
+        return True, None
+    except subprocess.TimeoutExpired:
+        return False, "ffmpeg timeout"
+    except Exception as e:
+        return False, str(e)
+
 
 def _can_access_stream(request):
     print("[play-media] _can_access_stream: entry")
@@ -104,6 +128,7 @@ class CustomAdminSite(admin.AdminSite):
             path('backend-functions/play-media/', self.admin_view(self.play_media_view), name="play-media"),
             path('backend-functions/play-media/list/', self.admin_view(self.play_media_list_view), name="play-media-list"),
             path('backend-functions/play-media/stream/', self.admin_view(self.play_media_stream_view), name="play-media-stream"),
+            path('backend-functions/play-media/reencode/', self.admin_view(self.reencode_media_view), name="play-media-reencode"),
             path('api/patient/<int:patient_id>/rerun/', self.admin_view(self.rerun_single_patient), name="rerun-patient"),
         
             # (you can add more backend function URLs here)
@@ -231,6 +256,7 @@ class CustomAdminSite(admin.AdminSite):
             patients=patients,
             play_media_list_url=reverse('admin:play-media-list'),
             play_media_stream_url=reverse('admin:play-media-stream'),
+            play_media_reencode_url=reverse('admin:play-media-reencode'),
         )
         return TemplateResponse(request, "admin/play_media.html", context)
 
@@ -260,14 +286,79 @@ class CustomAdminSite(admin.AdminSite):
             path = os.path.join(root, entry)
             if not os.path.isdir(path):
                 continue
-            files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-            folders.append({"folder": entry, "files": sorted(files)})
+            raw_files = sorted([f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))])
+            files = []
+            for f in raw_files:
+                low = f.lower()
+                if low.endswith('.mp4') and not low.endswith('_web.mp4'):
+                    base = f[:-4]  # without .mp4
+                    web_name = base + '_web.mp4'
+                    web_path = os.path.join(path, web_name)
+                    play_name = web_name if os.path.isfile(web_path) else None
+                    files.append({"name": f, "play_name": play_name})
+                else:
+                    files.append({"name": f, "play_name": None})
+            folders.append({"folder": entry, "files": files})
         tok = _make_stream_token(request)
         print("[play-media] list_view: returning %d folders, stream_token=%s" % (len(folders), bool(tok)))
         return JsonResponse({
             "patient_name": name,
             "folders": folders,
             "stream_token": tok,
+        })
+
+    def reencode_media_view(self, request):
+        """Re-encode patient's MP4s to H.264 for browser playback. POST with pid."""
+        from .views import RESULTS_MEDIA_ROOT
+        if request.method != 'POST':
+            return JsonResponse({"error": "POST required"}, status=405)
+        pid = request.POST.get('pid') or request.GET.get('pid')
+        if not pid and request.body:
+            try:
+                import json as _json
+                data = _json.loads(request.body.decode())
+                pid = data.get('pid') or pid
+            except Exception:
+                pass
+        if not pid:
+            return JsonResponse({"error": "pid is required"}, status=400)
+        try:
+            p = Patient.objects.get(patientId=int(pid))
+        except (Patient.DoesNotExist, ValueError):
+            return JsonResponse({"error": "Patient not found"}, status=404)
+        name = p.name
+        root = os.path.abspath(os.path.join(RESULTS_MEDIA_ROOT, name))
+        if not os.path.isdir(root):
+            return JsonResponse({"encoded": 0, "skipped": 0, "failed": [], "message": "No result folders"})
+        encoded = 0
+        skipped = 0
+        failed = []
+        for entry in sorted(os.listdir(root)):
+            dir_path = os.path.join(root, entry)
+            if not os.path.isdir(dir_path):
+                continue
+            for f in os.listdir(dir_path):
+                if not f.lower().endswith('.mp4') or f.lower().endswith('_web.mp4'):
+                    continue
+                src = os.path.join(dir_path, f)
+                if not os.path.isfile(src):
+                    continue
+                base = f[:-4]
+                web_name = base + '_web.mp4'
+                dst = os.path.join(dir_path, web_name)
+                if os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+                    skipped += 1
+                    continue
+                ok, err = _reencode_mp4_for_browser(src, dst)
+                if ok:
+                    encoded += 1
+                else:
+                    failed.append({"file": f, "error": err[:200] if err else "unknown"})
+        return JsonResponse({
+            "encoded": encoded,
+            "skipped": skipped,
+            "failed": failed,
+            "message": "Encoded %d, skipped %d, failed %d" % (encoded, skipped, len(failed)),
         })
 
     def play_media_stream_view(self, request):

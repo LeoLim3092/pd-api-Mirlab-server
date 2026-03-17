@@ -12,9 +12,11 @@
     {% endfor %}
   </select>
   <button type="button" id="btn-load" class="button" style="margin-left: 12px;">Load media list</button>
+  <button type="button" id="btn-reencode" class="button" style="margin-left: 8px;" title="Re-encode MP4s to H.264 for browser playback">Re-encode videos for browser</button>
 </div>
 
 <div id="loading" style="display: none;">Loading…</div>
+<div id="reencode-status" style="margin-bottom: 0.5rem;"></div>
 <div id="error" style="color: red; margin-bottom: 1rem;"></div>
 <div id="media-list"></div>
 
@@ -31,6 +33,7 @@
 
   const listUrl = "{{ play_media_list_url|escapejs }}";
   const streamBase = "{{ play_media_stream_url|escapejs }}";
+  const reencodeUrl = "{{ play_media_reencode_url|escapejs }}";
 
   const videoExt = ['mp4', 'webm', 'mov'];
   const audioExt = ['wav', 'mp3', 'm4a', 'ogg'];
@@ -85,18 +88,21 @@
           html += '<div class="media-folder" style="margin-bottom: 2rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px;">';
           html += '<h4 style="margin-top: 0;">📁 ' + fo.folder + '</h4>';
           (fo.files || []).forEach(function(file) {
-            const url = streamUrl(folderPath, file, streamToken);
-            if (isVideo(file)) {
-              html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
+            const fileName = typeof file === 'object' && file !== null ? file.name : file;
+            const playName = typeof file === 'object' && file !== null ? (file.play_name || file.name) : file;
+            const url = streamUrl(folderPath, playName, streamToken);
+            const label = playName !== fileName ? fileName + ' (browser version)' : fileName;
+            if (isVideo(fileName) || isVideo(playName)) {
+              html += '<div style="margin-bottom: 1rem;"><p><strong>' + label + '</strong></p>';
               html += '<video controls preload="metadata" style="max-width: 100%; max-height: 400px;" src="' + url + '">Your browser does not support video.</video></div>';
-            } else if (isAudio(file)) {
-              html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
+            } else if (isAudio(fileName)) {
+              html += '<div style="margin-bottom: 1rem;"><p><strong>' + fileName + '</strong></p>';
               html += '<audio controls preload="metadata" src="' + url + '">Your browser does not support audio.</audio></div>';
-            } else if (isImage(file)) {
-              html += '<div style="margin-bottom: 1rem;"><p><strong>' + file + '</strong></p>';
-              html += '<img src="' + url + '" alt="' + file + '" style="max-width: 100%; max-height: 400px;" /></div>';
+            } else if (isImage(fileName)) {
+              html += '<div style="margin-bottom: 1rem;"><p><strong>' + fileName + '</strong></p>';
+              html += '<img src="' + url + '" alt="' + fileName + '" style="max-width: 100%; max-height: 400px;" /></div>';
             } else {
-              html += '<p><a href="' + url + '" download="' + file + '">' + file + '</a> (download)</p>';
+              html += '<p><a href="' + url + '" download="' + fileName + '">' + fileName + '</a> (download)</p>';
             }
           });
           html += '</div>';
@@ -106,6 +112,46 @@
       .catch(function(err) {
         loading.style.display = 'none';
         errorEl.textContent = 'Failed to load: ' + err.message;
+      });
+  });
+
+  const btnReencode = document.getElementById('btn-reencode');
+  const reencodeStatus = document.getElementById('reencode-status');
+  function getCookie(name) {
+    const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return v ? v[2] : null;
+  }
+
+  btnReencode.addEventListener('click', function() {
+    const pid = patientSelect.value;
+    if (!pid) {
+      reencodeStatus.textContent = 'Select a patient first.';
+      reencodeStatus.style.color = 'red';
+      return;
+    }
+    reencodeStatus.textContent = 'Re-encoding…';
+    reencodeStatus.style.color = '';
+    btnReencode.disabled = true;
+    const formData = new FormData();
+    formData.append('pid', pid);
+    formData.append('csrfmiddlewaretoken', getCookie('csrftoken') || '');
+    fetch(reencodeUrl, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': getCookie('csrftoken') || '' }
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        btnReencode.disabled = false;
+        reencodeStatus.style.color = data.failed && data.failed.length ? 'orange' : 'green';
+        reencodeStatus.textContent = data.message || ('Encoded: ' + (data.encoded || 0) + ', skipped: ' + (data.skipped || 0) + ', failed: ' + (data.failed || []).length);
+        if (data.encoded > 0) btnLoad.click();
+      })
+      .catch(function(err) {
+        btnReencode.disabled = false;
+        reencodeStatus.style.color = 'red';
+        reencodeStatus.textContent = 'Re-encode failed: ' + err.message;
       });
   });
 })();
