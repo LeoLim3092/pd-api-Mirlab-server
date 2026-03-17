@@ -580,14 +580,15 @@ class getVideo(APIView):
     def get(self, request: WSGIRequest):
         """GET with ?folder_name=...&file_name=... for use with fetch + blob URL in frontend."""
         folder_name, file_name = _get_media_params(request)
-        return _serve_media_file(folder_name, file_name)
+        return _serve_media_file(folder_name, file_name, request)
 
     def post(self, request: WSGIRequest):
         folder_name, file_name = _get_media_params(request)
-        return _serve_media_file(folder_name, file_name)
+        return _serve_media_file(folder_name, file_name, request)
 
 
-def _serve_media_file(folder_name, file_name):
+def _serve_media_file(folder_name, file_name, request=None):
+    """Serve file with optional Range support so video/audio elements can load."""
     if not file_name or not folder_name:
         return HttpResponseBadRequest("folder_name and file_name are required")
     if '..' in file_name or '..' in folder_name or '\\' in file_name:
@@ -601,22 +602,45 @@ def _serve_media_file(folder_name, file_name):
     if not os.path.isfile(full_path):
         return JsonResponse({"error": "File not found"}, status=404)
     content_type = _content_type_for_file(file_name)
+    file_size = os.path.getsize(full_path)
+    range_header = (request.META.get('HTTP_RANGE', '') if request else '').strip()
+    if range_header.startswith('bytes='):
+        try:
+            parts = range_header[6:].split('-')
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+            if start < 0 or start >= file_size or end >= file_size or end < start:
+                start, end = 0, file_size - 1
+        except (ValueError, IndexError):
+            start, end = 0, file_size - 1
+        length = end - start + 1
+        with open(full_path, 'rb') as f:
+            f.seek(start)
+            data = f.read(length)
+        response = HttpResponse(data, status=206, content_type=content_type)
+        response['Content-Range'] = 'bytes %d-%d/%d' % (start, end, file_size)
+        response['Content-Length'] = str(len(data))
+        response['Accept-Ranges'] = 'bytes'
+        return response
     with open(full_path, 'rb') as f:
-        return FileResponse(f, content_type=content_type)
+        response = FileResponse(f, content_type=content_type)
+    response['Accept-Ranges'] = 'bytes'
+    response['Content-Length'] = file_size
+    return response
 
 
 class getMedia(APIView):
-    """Serve video/audio/image from results. Supports GET for fetch+blob playback after login."""
+    """Serve video/audio/image from results. Supports GET and Range for playback after login."""
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request: WSGIRequest):
         folder_name, file_name = _get_media_params(request)
-        return _serve_media_file(folder_name, file_name)
+        return _serve_media_file(folder_name, file_name, request)
 
     def post(self, request: WSGIRequest):
         folder_name, file_name = _get_media_params(request)
-        return _serve_media_file(folder_name, file_name)
+        return _serve_media_file(folder_name, file_name, request)
 
 
 class listResultMedia(APIView):

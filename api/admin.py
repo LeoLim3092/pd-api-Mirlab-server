@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.http import HttpResponseRedirect, FileResponse, JsonResponse, HttpResponseBadRequest
+from django.http import HttpResponseRedirect, FileResponse, JsonResponse, HttpResponseBadRequest, HttpResponse
 from django.urls import path, reverse
 from django.contrib import messages
 from django.template.response import TemplateResponse
@@ -207,7 +207,7 @@ class CustomAdminSite(admin.AdminSite):
         return JsonResponse({"patient_name": name, "folders": folders})
 
     def play_media_stream_view(self, request):
-        """Stream a single file from results (for <video>/<audio> src with session cookie)."""
+        """Stream a single file from results with Range support (so <video>/<audio> can load)."""
         from .views import RESULTS_MEDIA_ROOT, _content_type_for_file
         folder_name = (request.GET.get('folder_name') or '').strip()
         file_name = (request.GET.get('file_name') or '').strip()
@@ -222,8 +222,33 @@ class CustomAdminSite(admin.AdminSite):
         if not os.path.isfile(full_path):
             return JsonResponse({"error": "File not found"}, status=404)
         content_type = _content_type_for_file(file_name)
+        file_size = os.path.getsize(full_path)
+        range_header = request.META.get('HTTP_RANGE', '').strip()
+        if range_header.startswith('bytes='):
+            # Parse "bytes=start-end" (end can be missing = until end of file)
+            try:
+                parts = range_header[6:].split('-')
+                start = int(parts[0]) if parts[0] else 0
+                end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+                if start < 0 or start >= file_size or end >= file_size or end < start:
+                    start, end = 0, file_size - 1
+            except (ValueError, IndexError):
+                start, end = 0, file_size - 1
+            length = end - start + 1
+            with open(full_path, 'rb') as f:
+                f.seek(start)
+                data = f.read(length)
+            response = HttpResponse(data, status=206, content_type=content_type)
+            response['Content-Range'] = 'bytes %d-%d/%d' % (start, end, file_size)
+            response['Content-Length'] = len(data)
+            response['Accept-Ranges'] = 'bytes'
+            return response
+        # No Range: return full file and advertise range support
         with open(full_path, 'rb') as f:
-            return FileResponse(f, content_type=content_type)
+            response = FileResponse(f, content_type=content_type)
+        response['Accept-Ranges'] = 'bytes'
+        response['Content-Length'] = file_size
+        return response
 
     
 
