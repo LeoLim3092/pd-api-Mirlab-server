@@ -3,6 +3,7 @@ import json
 import joblib
 import numpy as np
 import cv2
+import ast
 
 from .handExtraction import hand_extraction
 from . import handFeaturesExtraction
@@ -231,13 +232,22 @@ if __name__ == "__main__":
     #   3. Run this script with the Python environment that has all
     #      project dependencies installed.
     # -----------------------------------------------------------------------
-    ID_LIST: list[tuple[str, float, float]] = [
-        # ("20200514_8ABC", 80, 0.0),  # 0: female
-        # ("20200515_9XYZ", 78, 1.0),  # 1: male
-    ]
+    id_list_txt = "/mnt/other/IDlist.txt"
 
-    if not ID_LIST:
-        print("No IDs specified in ID_LIST. Edit run_hand_prediction_custom.py to add IDs.")
+    if os.path.exists(id_list_txt):
+        with open(id_list_txt, "r", encoding="utf-8") as f:
+            content = f.read()
+        try:
+            ID_LIST = ast.literal_eval(content)
+        except Exception as e:
+            raise ValueError(f"Failed to parse ID list from {id_list_txt}: {e}")
+
+        if not ID_LIST:
+            print(f"ID list file {id_list_txt} is empty. Nothing to run.")
+        else:
+            print(f"Loaded {len(ID_LIST)} IDs from {id_list_txt}")
+            run_batch_hand_prediction(ID_LIST, debug=False)
     else:
-        run_batch_hand_prediction(ID_LIST, debug=False)
+        print(f"ID list file not found: {id_list_txt}")
+
 
