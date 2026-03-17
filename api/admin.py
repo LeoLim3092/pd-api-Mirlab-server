@@ -281,7 +281,10 @@ class CustomAdminSite(admin.AdminSite):
         out = {"patient_name": name, "stream_token": _make_stream_token(request)}
 
         def latest_for_type(ft):
-            rec = FileUploaded.objects.filter(patientId=p, file_type=ft).order_by('-upload_time').first()
+            qs = FileUploaded.objects.filter(patientId=p, file_type=ft)
+            if ft == 'sound':
+                qs = qs.exclude(file_path__icontains='freetalk')
+            rec = qs.order_by('-upload_time').first()
             if not rec:
                 return None
             sub = UPLOAD_SUBFOLDERS.get(ft, '')
@@ -372,7 +375,10 @@ class CustomAdminSite(admin.AdminSite):
                 p = Patient.objects.get(patientId=int(pid))
             except (Patient.DoesNotExist, ValueError):
                 return JsonResponse({"error": "Patient not found"}, status=404)
-            rec = FileUploaded.objects.filter(patientId=p, file_type=media_type).order_by('-upload_time').first()
+            qs = FileUploaded.objects.filter(patientId=p, file_type=media_type)
+            if media_type == 'sound':
+                qs = qs.exclude(file_path__icontains='freetalk')
+            rec = qs.order_by('-upload_time').first()
             if not rec:
                 return JsonResponse({"error": "No upload for this type"}, status=404)
             sub = UPLOAD_SUBFOLDERS.get(media_type, '')
