@@ -622,8 +622,9 @@ def _serve_media_file(folder_name, file_name, request=None):
         response['Content-Length'] = str(len(data))
         response['Accept-Ranges'] = 'bytes'
         return response
-    with open(full_path, 'rb') as f:
-        response = FileResponse(f, content_type=content_type)
+    # Do not use "with open": FileResponse reads lazily, so the file must stay open until sent.
+    f = open(full_path, 'rb')
+    response = FileResponse(f, content_type=content_type)
     response['Accept-Ranges'] = 'bytes'
     response['Content-Length'] = file_size
     return response

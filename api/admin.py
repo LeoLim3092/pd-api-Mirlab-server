@@ -243,9 +243,10 @@ class CustomAdminSite(admin.AdminSite):
             response['Content-Length'] = len(data)
             response['Accept-Ranges'] = 'bytes'
             return response
-        # No Range: return full file and advertise range support
-        with open(full_path, 'rb') as f:
-            response = FileResponse(f, content_type=content_type)
+        # No Range: return full file and advertise range support.
+        # Do not use "with open": FileResponse reads lazily, so the file must stay open until sent.
+        f = open(full_path, 'rb')
+        response = FileResponse(f, content_type=content_type)
         response['Accept-Ranges'] = 'bytes'
         response['Content-Length'] = file_size
         return response
