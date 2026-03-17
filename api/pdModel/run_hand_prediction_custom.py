@@ -2,6 +2,7 @@ import os
 import json
 import joblib
 import numpy as np
+import cv2
 
 from .handExtraction import hand_extraction
 from . import handFeaturesExtraction
@@ -73,7 +74,7 @@ def extract_hand_landmarks_for_id(pid: str) -> tuple[str, str]:
     return right_path, left_path
 
 
-def extract_hand_features_for_id(pid: str, fps: int = 59, debug: bool = False) -> np.ndarray:
+def extract_hand_features_for_id(pid: str, debug: bool = False) -> np.ndarray:
     """
     Extract hand-tapping features for a single ID and save them as hand_feature.npy.
 
@@ -82,6 +83,16 @@ def extract_hand_features_for_id(pid: str, fps: int = 59, debug: bool = False) -
     """
     out_dir = os.path.join(BASE_RESULT_DIR, pid)
     ensure_dir(out_dir)
+
+    # Build original video paths to read FPS from the left-hand video
+    left_video, _ = build_video_paths(pid)
+    cap = cv2.VideoCapture(left_video)
+    if not cap.isOpened():
+        raise ValueError(f"Cannot open hand video for FPS reading: {left_video}")
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    cap.release()
+    if fps <= 0:
+        raise ValueError(f"Invalid FPS ({fps}) read from video: {left_video}")
 
     right_path, left_path = extract_hand_landmarks_for_id(pid)
 
@@ -147,7 +158,6 @@ def predict_hand_from_features(
 
 def run_batch_hand_prediction(
     id_list: list[tuple[str, float, float]],
-    fps: int = 59,
     debug: bool = False,
 ) -> dict:
     """
@@ -167,7 +177,7 @@ def run_batch_hand_prediction(
         try:
             print(f"[run_batch_hand_prediction] Processing ID: {pid}, age={age}, gender={gender}")
 
-            hand_feat = extract_hand_features_for_id(pid, fps=fps, debug=debug)
+            hand_feat = extract_hand_features_for_id(pid, debug=debug)
             proba_dt = predict_hand_from_features(
                 hand_feat,
                 age=age,
@@ -229,5 +239,5 @@ if __name__ == "__main__":
     if not ID_LIST:
         print("No IDs specified in ID_LIST. Edit run_hand_prediction_custom.py to add IDs.")
     else:
-        run_batch_hand_prediction(ID_LIST, fps=59, debug=False)
+        run_batch_hand_prediction(ID_LIST, debug=False)
 
