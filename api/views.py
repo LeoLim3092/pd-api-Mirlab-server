@@ -121,8 +121,8 @@ class UploadPaint(APIView):
         type = request.POST['type']
         
         try:
-            cooridinates = request.POST['coordinates']
-            coordinates_data = json.loads(cooridinates)
+            coordinates = request.POST['coordinates']
+            coordinates_data = json.loads(coordinates)
         except json.JSONDecodeError:
             return HttpResponseBadRequest("Invalid Json format")
         
@@ -132,7 +132,7 @@ class UploadPaint(APIView):
         current_pid = Patient.objects.get(patientId = int(pid))
         patient = current_pid.name
 
-        if(type == 'spiral_right'):
+        if type == 'spiral_right':
             file_path = paint_spiral_right_storage.save(time + "_spiral_right_" + patient + '_' + '_' + pid + '_' + file.name, file)
             file = FileUploaded(patientId=current_pid, patient=patient, file_type='spiral_paint', file_path=file_path)
             file.save()
@@ -144,42 +144,44 @@ class UploadPaint(APIView):
             with open(json_path, 'w') as json_file:
                 json.dump(coordinates_data, json_file)
             
-        if(type == 'spiral_left'):
+        elif type == 'spiral_left':
             file_path = paint_spiral_left_storage.save(time + "_spiral_left_" + patient + '_' + '_' + pid + '_' + file.name, file)
             file = FileUploaded(patientId=current_pid, patient=patient, file_type='spiral_paint', file_path=file_path)
             file.save()
             
             # Save coordinates as JSON file
             json_filename = os.path.splitext(file_path)[0] + '.json'
-            json_path = os.path.join(paint_spiral_right_storage.location, os.path.basename(json_filename))
+            json_path = os.path.join(paint_spiral_left_storage.location, os.path.basename(json_filename))
 
             with open(json_path, 'w') as json_file:
                 json.dump(coordinates_data, json_file)
                 
-        if(type == 'three'):
+        elif type == 'three':
             file_path = paint_three_right_storage.save(time + "_three_right_" + patient + '_' + '_' + pid + '_' + file.name, file)
             file = FileUploaded(patientId=current_pid, patient=patient, file_type='three', file_path=file_path)
             file.save()
             
             # Save coordinates as JSON file
             json_filename = os.path.splitext(file_path)[0] + '.json'
-            json_path = os.path.join(paint_spiral_right_storage.location, os.path.basename(json_filename))
+            json_path = os.path.join(paint_three_right_storage.location, os.path.basename(json_filename))
 
             with open(json_path, 'w') as json_file:
                 json.dump(coordinates_data, json_file)
                 
-        elif(type == 'three_left'):
+        elif type == 'three_left':
             file_path = paint_three_left_storage.save(time + "_three_left_" + patient + '_' + '_' + pid + '_' + file.name, file)
             file = FileUploaded(patientId=current_pid, patient=patient, file_type='three_paint', file_path=file_path)
             file.save()
             
             # Save coordinates as JSON file
             json_filename = os.path.splitext(file_path)[0] + '.json'
-            json_path = os.path.join(paint_spiral_right_storage.location, os.path.basename(json_filename))
+            json_path = os.path.join(paint_three_left_storage.location, os.path.basename(json_filename))
 
             with open(json_path, 'w') as json_file:
                 json.dump(coordinates_data, json_file)
-                
+        else:
+            return HttpResponseBadRequest(f"Unknown paint type: {type}")
+
         print(json_path)
 
         return HttpResponse()
@@ -269,10 +271,15 @@ class UploadMedicineRecord(APIView):
         format = '%Y-%m-%d %H:%M:%S'
         time = datetime.datetime.now().strftime(format)
         current_pid = Patient.objects.get(patientId=int(pid))
-        # pr = PatientRecord(patientId=pid, time=time, taking_pd_medicine=medicine_taken,
-        #              taking_pd_med3hr=medicine_taken_3hr)
-        pr = PatientRecord(patientId=current_pid, time=time, taking_pd_medicine=medicine_taken,
-                    taking_pd_med3hr=medicine_taken_3hr)
+        # Convert POST strings to bool for BooleanField
+        taking_pd = str(medicine_taken).lower() in ('true', '1', 'yes')
+        taking_pd_3hr = str(medicine_taken_3hr).lower() in ('true', '1', 'yes')
+        pr = PatientRecord(
+            patientId=current_pid,
+            time=time,
+            taking_pd_medicine=taking_pd,
+            taking_pd_med3hr=taking_pd_3hr,
+        )
         pr.save()
         return HttpResponse()
 
@@ -289,9 +296,24 @@ class UploadQuestionaireRecord(APIView):
         PostProb = request.POST["PostProb"]
         PPPD = request.POST["PPPD"]
         response = request.POST["response"]
-        current_pid = Patient.objects.get(patientId = int(pid))
-        qr = PatientQuestionaireRecord(patientId=current_pid, time=time, riskMarker = riskMarker, PLR = PLR,
-                                       TELR = TELR, PostProb = PostProb, PPPD = PPPD, response = response)
+        current_pid = Patient.objects.get(patientId=int(pid))
+        try:
+            riskMarker_f = float(riskMarker)
+            PLR_f = float(PLR)
+            TELR_f = float(TELR)
+            PostProb_f = float(PostProb)
+        except (TypeError, ValueError):
+            riskMarker_f = PLR_f = TELR_f = PostProb_f = 0.0
+        qr = PatientQuestionaireRecord(
+            patientId=current_pid,
+            time=time,
+            riskMarker=riskMarker_f,
+            PLR=PLR_f,
+            TELR=TELR_f,
+            PostProb=PostProb_f,
+            PPPD=PPPD,
+            response=response,
+        )
         qr.save()
         return HttpResponse()
 
@@ -310,12 +332,23 @@ class CreateNewPatient(APIView):
         phone_no = request.POST["phone_no"]
         id_no = request.POST["id_no"]
         
-        format = '%Y-%m-%d'
-        time_now = datetime.datetime.now()
-
-        #p = Patient(name = patient_name, serial_number = '', gender = patient_gender, age = patient_age)
-        p = Patient(name=patient_name, user_name=user_name, gender=patient_gender, age=int(patient_age),
-                    birthday=patient_birthday, email=patient_email, phone_no=phone_no, id_no=id_no)
+        # Assign next patientId (Patient has IntegerField primary key with no auto-generation)
+        next_id = (Patient.objects.aggregate(m=Max('patientId'))['m'] or 0) + 1
+        try:
+            gender_int = int(patient_gender)
+        except (TypeError, ValueError):
+            gender_int = 0
+        p = Patient(
+            patientId=next_id,
+            name=patient_name,
+            user_name=user_name,
+            gender=gender_int,
+            age=int(patient_age),
+            birthday=patient_birthday,
+            email=patient_email,
+            phone_no=phone_no,
+            id_no=id_no,
+        )
         p.save()
         return HttpResponse()
 
@@ -331,10 +364,14 @@ class GoogleLogin(APIView):
         res = rq.get(path + request.POST['token'])
         js = res.json()
         email = js["email"]
-        user, created = User.objects.get_or_create(email=email)
-        email_local, email_domain = email.split("@")
-        if created:
+        email_local, email_domain = email.split("@", 1)
+        # User model does not enforce unique email; use filter to avoid MultipleObjectsReturned
+        user = User.objects.filter(email=email).first()
+        if user is None:
+            user = User.objects.create_user(username=email_local, email=email)
+        elif not user.username or user.username == "":
             user.username = email_local
+            user.save()
         
         if email_domain == 'ntu.edu.tw':
             group = Group.objects.get(name='MedicalStaff')
@@ -383,10 +420,24 @@ class CheckRecording(APIView):
         gait_file = FileUploaded.objects.filter(patientId=p, file_type='gait').order_by('-upload_time').first()
         sound_file = FileUploaded.objects.filter(patientId=p, file_type='sound').order_by('-upload_time').first()
 
-        if os.path.isdir(f'/mnt/pd_app/results/{name}/'):
-            os.makedirs(f'/mnt/pd_app/results/{name}/{current_time}/')
-        else:
-            os.makedirs(f'/mnt/pd_app/results/{name}/')
+        if not all([r_hand_file, l_hand_file, gait_file, sound_file]):
+            missing = []
+            if not r_hand_file:
+                missing.append("right_hand")
+            if not l_hand_file:
+                missing.append("left_hand")
+            if not gait_file:
+                missing.append("gait")
+            if not sound_file:
+                missing.append("sound")
+            return JsonResponse(
+                {"success": "failed", "error": f"Missing required uploads: {', '.join(missing)}."},
+                status=400
+            )
+
+        results_dir = f'/mnt/pd_app/results/{name}/'
+        os.makedirs(results_dir, exist_ok=True)
+        os.makedirs(f'{results_dir}{current_time}/', exist_ok=True)
 
         gait_file_pth = f'{base_path}/walk/{gait_file.file_path}'
         l_hand_file_pth = f'{base_path}/gesture/{l_hand_file.file_path}'
@@ -397,7 +448,7 @@ class CheckRecording(APIView):
             success, error = data_checking(gait_file_pth, l_hand_file_pth, r_hand_file_pth, sound_file_pth)
             return JsonResponse({"success": success, "error": error})
         
-        except:
+        except Exception:
             error_message = "Failed to process data"
             return Response({"error": error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
@@ -420,7 +471,13 @@ class PredictWithoutModelExtraction(APIView):
         current_time = datetime.datetime.now().strftime(format)
         
         out_dir = f'/mnt/pd_app/results/{name}/'
-        lastest_extracted_npy = get_latest_folder_by_creation_time(out_dir) + "/" + "all_feature.npy"
+        latest_folder = get_latest_folder_by_creation_time(out_dir)
+        if not latest_folder:
+            return Response(
+                {"error": "No previous extraction found. Run full prediction first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        lastest_extracted_npy = os.path.join(latest_folder, "all_feature.npy")
         
         try:
             gait_result, hand_result, voice_results, all_results = predict_models(lastest_extracted_npy, age, gender)
@@ -428,9 +485,9 @@ class PredictWithoutModelExtraction(APIView):
                         hand_result=hand_result, multimodal_results=all_results, upload_time=current_time)
             r.save()
             return HttpResponse()
-        except:
+        except Exception as e:
             error_message = "Failed to process data"
-            return Response({"error": error_message}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": error_message, "detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
 class PredictModel(APIView):
@@ -461,8 +518,11 @@ class GetResults(APIView):
     def post(self, request: WSGIRequest):
         pid = request.POST['pid']
         p = Patient.objects.get(patientId=int(pid))
-        thereshold = Article.objects.get(title="Theresholds")
-        thre = thereshold.content.split(", ")  # Split the string into a list
+        try:
+            threshold_article = Article.objects.get(title="Theresholds")  # DB title kept for backwards compatibility
+            thre = threshold_article.content.split(", ")
+        except Article.DoesNotExist:
+            thre = []
         name = p.name
         latest_results = Results.objects.filter(patientId=p).order_by('-upload_time').first()
         if latest_results:
@@ -483,10 +543,18 @@ class getVideo(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
-        file_name = request.POST['file_name']
-        folder_name = request.POST['file_name']
-        video_path = f'/mnt/pd_app/results/{folder_name}/{file_name}'
-
+        file_name = request.POST.get('file_name', '').strip()
+        folder_name = request.POST.get('folder_name', file_name).strip()
+        if not file_name or not folder_name:
+            return HttpResponseBadRequest("file_name and folder_name are required")
+        # Prevent path traversal
+        if '..' in file_name or '..' in folder_name or '/' in file_name or '\\' in file_name:
+            return HttpResponseBadRequest("Invalid file or folder name")
+        video_path = os.path.normpath(f'/mnt/pd_app/results/{folder_name}/{file_name}')
+        if not video_path.startswith('/mnt/pd_app/results/'):
+            return HttpResponseBadRequest("Invalid path")
+        if not os.path.isfile(video_path):
+            return JsonResponse({"error": "File not found"}, status=404)
         with open(video_path, 'rb') as video_file:
             response = FileResponse(video_file, content_type='video/mp4')
             return response
@@ -596,14 +664,12 @@ class getLastUploadData(APIView):
         gait_file = FileUploaded.objects.filter(patientId=p, file_type='gait').order_by('-upload_time').first()
         sound_file = FileUploaded.objects.filter(patientId=p, file_type='sound').order_by('-upload_time').first()
 
-        rh_last_upload = r_hand_file.upload_time
-        lh_last_upload = l_hand_file.upload_time
-        gait_last_upload = gait_file.upload_time
-        sound_last_upload = sound_file.upload_time
-        data = {"rh_time": rh_last_upload,
-                "lh_time": lh_last_upload,
-                "gait_time": gait_last_upload,
-                "sound_time": sound_last_upload}
+        data = {
+            "rh_time": r_hand_file.upload_time if r_hand_file else None,
+            "lh_time": l_hand_file.upload_time if l_hand_file else None,
+            "gait_time": gait_file.upload_time if gait_file else None,
+            "sound_time": sound_file.upload_time if sound_file else None,
+        }
 
         return JsonResponse(data, safe=False)
 

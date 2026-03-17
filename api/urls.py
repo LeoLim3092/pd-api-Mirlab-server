@@ -1,4 +1,3 @@
-import imp
 from django.urls import include, path
 from django.contrib.auth.models import User
 from django.contrib import admin
@@ -33,6 +32,7 @@ urlpatterns += [
     path("get_user_data", views.getUserData.as_view()),
     path("get_last_upload_data", views.getLastUploadData.as_view()),
     path("check_recording", views.CheckRecording.as_view()),
+    path("get_video", views.getVideo.as_view()),
     path("rerun_all_predictions", views.RerunAllPatientPredictModel.as_view()),
     path("rerun_from_date_predictions", views.RerunFromDatePatientPrediction.as_view()),
     path('export-latest-results', views.export_latest_patient_results, name='export_latest_results'),

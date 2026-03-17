@@ -32,6 +32,7 @@ class Patient(models.Model):
     gender = models.IntegerField(default=0)  # 0 = non, 1 = male, 2 = female
     age = models.IntegerField(default=0)
     birthday = models.CharField(max_length=20, default='')
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
     class Meta:
         permissions = ((ViewPatientListPermssion.codename,
@@ -70,7 +71,7 @@ class PatientRecordViewSet(viewsets.ModelViewSet):
     serializer_class = PatientRecordSerializer
 
     def list(self, request, *args, **kwargs):
-        return super().list(self, request, args, kwargs)
+        return super().list(request, *args, **kwargs)
 
 
 class PatientViewSet(viewsets.ModelViewSet):
@@ -79,7 +80,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     permission_classes = [ViewPatientListPermssion]
 
     def list(self, request, *args, **kwargs):
-        return super().list(self, request, args, kwargs)
+        return super().list(request, *args, **kwargs)
 
 
 class Article(models.Model):
