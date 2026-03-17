@@ -51,15 +51,12 @@ FILE_TYPE_STORAGE_PATHS = {
 STREAM_TOKEN_MAX_AGE = 600  # seconds
 
 def _make_stream_token(request):
-    print("[play-media] _make_stream_token: entry")
     if not getattr(request, 'user', None) or not request.user.is_authenticated:
-        print("[play-media] _make_stream_token: no user or not authenticated, return None")
         return None
     signer = Signer(key=settings.SECRET_KEY)
     payload = {'user_id': request.user.pk, 'exp': int(time.time()) + STREAM_TOKEN_MAX_AGE}
     import json
     token = signer.sign(json.dumps(payload))
-    print("[play-media] _make_stream_token: token created for user_id=%s" % request.user.pk)
     return token
 
 def _reencode_mp4_for_browser(src_path, dst_path, timeout=120):
@@ -85,31 +82,23 @@ def _reencode_mp4_for_browser(src_path, dst_path, timeout=120):
 
 
 def _can_access_stream(request):
-    print("[play-media] _can_access_stream: entry")
     if getattr(request, 'user', None) and request.user.is_authenticated and request.user.is_staff:
-        print("[play-media] _can_access_stream: allowed by session (staff)")
         return True
     token = (request.GET.get('stream_token') or '').strip()
-    print("[play-media] _can_access_stream: stream_token present=%s" % bool(token))
     if not token:
-        print("[play-media] _can_access_stream: no token, deny")
         return False
     signer = Signer(key=settings.SECRET_KEY)
     import json
     try:
         data = json.loads(signer.unsign(token))
-        print("[play-media] _can_access_stream: token unsigned, exp=%s" % data.get('exp'))
         if data.get('exp', 0) < int(time.time()):
-            print("[play-media] _can_access_stream: token expired, deny")
             return False
         from django.contrib.auth import get_user_model
         User = get_user_model()
         user = User.objects.filter(pk=data.get('user_id')).first()
         allowed = user is not None and user.is_staff
-        print("[play-media] _can_access_stream: token user_id=%s is_staff=%s => %s" % (data.get('user_id'), getattr(user, 'is_staff', None), allowed))
         return allowed
     except (BadSignature, ValueError, TypeError) as e:
-        print("[play-media] _can_access_stream: token invalid (%s), deny" % type(e).__name__)
         return False
 
 
@@ -266,16 +255,16 @@ class CustomAdminSite(admin.AdminSite):
 
     def play_media_list_view(self, request):
         """JSON: latest upload per type (gait, left_hand, right_hand, sound) for selected patient."""
-        print("[play-media] list_view: entry")
+
         pid = request.GET.get('pid')
-        print("[play-media] list_view: pid=%s" % pid)
+
         if not pid:
-            print("[play-media] list_view: missing pid, 400")
+
             return JsonResponse({"error": "pid is required"}, status=400)
         try:
             p = Patient.objects.get(patientId=int(pid))
         except (Patient.DoesNotExist, ValueError) as e:
-            print("[play-media] list_view: patient not found (%s), 404" % e)
+
             return JsonResponse({"error": "Patient not found"}, status=404)
         name = p.name
         out = {"patient_name": name, "stream_token": _make_stream_token(request)}
@@ -302,7 +291,7 @@ class CustomAdminSite(admin.AdminSite):
 
         for key in ('gait', 'left_hand', 'right_hand', 'sound'):
             out[key] = latest_for_type(key)
-        print("[play-media] list_view: returning latest 4 media, stream_token=%s" % bool(out["stream_token"]))
+
         return JsonResponse(out)
 
     def reencode_media_view(self, request):
@@ -357,12 +346,12 @@ class CustomAdminSite(admin.AdminSite):
 
     def play_media_stream_view(self, request):
         """Stream a single file: from upload (source=upload, pid, type) or from results (folder_name, file_name)."""
-        print("[play-media] stream_view: entry")
+
         from .views import RESULTS_MEDIA_ROOT, _content_type_for_file
         if not _can_access_stream(request):
-            print("[play-media] stream_view: access denied, redirect to login")
+
             return HttpResponseRedirect(reverse('admin:login') + '?next=' + request.get_full_path())
-        print("[play-media] stream_view: access OK")
+
 
         source = (request.GET.get('source') or '').strip().lower()
         if source == 'upload':
@@ -395,28 +384,21 @@ class CustomAdminSite(admin.AdminSite):
         else:
             folder_name = (request.GET.get('folder_name') or '').strip()
             file_name = (request.GET.get('file_name') or '').strip()
-            print("[play-media] stream_view: folder_name=%r file_name=%r" % (folder_name[:50] if len(folder_name) > 50 else folder_name, file_name[:50] if len(file_name) > 50 else file_name))
             if not file_name or not folder_name:
-                print("[play-media] stream_view: missing folder_name or file_name, 400")
                 return HttpResponseBadRequest("folder_name and file_name are required")
             if '..' in file_name or '..' in folder_name or '\\' in file_name or '/' in file_name:
-                print("[play-media] stream_view: invalid path chars, 400")
                 return HttpResponseBadRequest("Invalid path")
             root = os.path.abspath(RESULTS_MEDIA_ROOT)
             full_path = os.path.normpath(os.path.join(root, folder_name, file_name))
-            print("[play-media] stream_view: root=%s full_path=%s" % (root, full_path))
             if not full_path.startswith(root + os.sep) and full_path != root:
-                print("[play-media] stream_view: path outside root, 400")
                 return HttpResponseBadRequest("Invalid path")
 
         file_name_for_ct = os.path.basename(full_path)
         if not os.path.isfile(full_path):
-            print("[play-media] stream_view: file not found, 404")
             return JsonResponse({"error": "File not found"}, status=404)
         content_type = _content_type_for_file(file_name_for_ct)
         file_size = os.path.getsize(full_path)
         range_header = request.META.get('HTTP_RANGE', '').strip()
-        print("[play-media] stream_view: content_type=%s file_size=%s HTTP_RANGE=%r" % (content_type, file_size, range_header[:50] if range_header else ''))
         if range_header.startswith('bytes='):
             # Parse "bytes=start-end" (end can be missing = until end of file)
             try:
@@ -428,7 +410,6 @@ class CustomAdminSite(admin.AdminSite):
             except (ValueError, IndexError):
                 start, end = 0, file_size - 1
             length = end - start + 1
-            print("[play-media] stream_view: Range 206 start=%s end=%s length=%s" % (start, end, length))
             with open(full_path, 'rb') as f:
                 f.seek(start)
                 data = f.read(length)
@@ -436,10 +417,8 @@ class CustomAdminSite(admin.AdminSite):
             response['Content-Range'] = 'bytes %d-%d/%d' % (start, end, file_size)
             response['Content-Length'] = str(len(data))
             response['Accept-Ranges'] = 'bytes'
-            print("[play-media] stream_view: returning 206")
             return response
         # No Range: stream file in chunks so WSGI never sees a closed file handle.
-        print("[play-media] stream_view: no Range, streaming full file")
         def _stream_file():
             with open(full_path, 'rb') as f:
                 while True:
@@ -450,7 +429,6 @@ class CustomAdminSite(admin.AdminSite):
         response = StreamingHttpResponse(_stream_file(), content_type=content_type)
         response['Content-Length'] = str(file_size)
         response['Accept-Ranges'] = 'bytes'
-        print("[play-media] stream_view: returning 200 StreamingHttpResponse")
         return response
 
     
