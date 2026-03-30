@@ -111,6 +111,14 @@ class CustomAdminSite(admin.AdminSite):
     site_title = "Admin Portal"
     index_title = "Welcome to the Backend Control Panel"
 
+    def render_admin_page(self, request, template_name, **extra_context):
+        context = dict(
+            self.each_context(request),
+            subtitle=None,
+            **extra_context,
+        )
+        return TemplateResponse(request, template_name, context)
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -129,11 +137,11 @@ class CustomAdminSite(admin.AdminSite):
         return custom_urls + urls
 
     def backend_functions_view(self, request):
-        context = dict(
-            self.each_context(request),
+        return self.render_admin_page(
+            request,
+            "admin/backend_functions.html",
             title='Backend Functions',
         )
-        return TemplateResponse(request, "admin/backend_functions.html", context)
 
     def rerun_predictions(self, request):
         url = "http://140.112.91.59:10409/api/rerun_all_predictions"
@@ -215,12 +223,12 @@ class CustomAdminSite(admin.AdminSite):
         else:
             form = DownloadDataForm()
 
-        context = dict(
-            self.each_context(request),
+        return self.render_admin_page(
+            request,
+            "admin/download_data.html",
             title="Download Data",
-            form=form
+            form=form,
         )
-        return TemplateResponse(request, "admin/download_data.html", context)
 
 
     def view_logs_view(self, request):
@@ -233,25 +241,25 @@ class CustomAdminSite(admin.AdminSite):
         with open(log_file_path, 'r') as f:
             log_content = f.readlines()[-200:]  # only show last 200 lines (for speed)
 
-        context = dict(
-            self.each_context(request),
+        return self.render_admin_page(
+            request,
+            "admin/view_logs.html",
             title="Server Logs",
             log_content=log_content,
         )
-        return TemplateResponse(request, "admin/view_logs.html", context)
 
     def play_media_view(self, request):
         """Dashboard page to list and play video/audio from results (session auth)."""
         patients = Patient.objects.all().order_by('name')
-        context = dict(
-            self.each_context(request),
+        return self.render_admin_page(
+            request,
+            "admin/play_media.html",
             title="Play Video / Audio",
             patients=patients,
             play_media_list_url=reverse('admin:play-media-list'),
             play_media_stream_url=reverse('admin:play-media-stream'),
             play_media_reencode_url=reverse('admin:play-media-reencode'),
         )
-        return TemplateResponse(request, "admin/play_media.html", context)
 
     def play_media_list_view(self, request):
         """JSON: latest upload per type (gait, left_hand, right_hand, sound) for selected patient."""
