@@ -4,11 +4,13 @@ from django.http import (
     HttpResponse, StreamingHttpResponse,
 )
 from django.urls import path, reverse
+from django.shortcuts import redirect
 from django.contrib import messages
 from django.template.response import TemplateResponse
 from django.conf import settings
 from django import forms
 from rest_framework_simplejwt.tokens import AccessToken
+import csv
 import requests
 import zipfile
 import io
@@ -18,6 +20,7 @@ import subprocess
 import shutil
 from django.core.signing import Signer, BadSignature
 from .models import Patient, Article, PatientRecord, FileUploaded, Results, PatientQuestionaireRecord
+from .questionnaire_export import build_results_questionnaire_export_rows
 import logging
 from django.contrib.auth.models import Group, User
 from rest_framework.authtoken.models import Token
@@ -125,6 +128,7 @@ class CustomAdminSite(admin.AdminSite):
             path('backend-functions/', self.admin_view(self.backend_functions_view), name="backend-functions"),
             path('backend-functions/rerun-predictions/', self.admin_view(self.rerun_predictions), name="rerun-predictions"),
             path('backend-functions/download-data/', self.admin_view(self.download_data_view), name="download-data"),
+            path('backend-functions/download-results-questionnaires/', self.admin_view(self.download_results_questionnaires_view), name="download-results-questionnaires"),
             path('backend-functions/view-logs/', self.admin_view(self.view_logs_view), name="view-logs"),
             path('backend-functions/play-media/', self.admin_view(self.play_media_view), name="play-media"),
             path('backend-functions/play-media/list/', self.admin_view(self.play_media_list_view), name="play-media-list"),
@@ -229,6 +233,20 @@ class CustomAdminSite(admin.AdminSite):
             title="Download Data",
             form=form,
         )
+
+    def download_results_questionnaires_view(self, request):
+        rows, fieldnames = build_results_questionnaire_export_rows()
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{today}_results_questionnaires.csv"'
+        )
+        response.write("\ufeff")
+        writer = csv.DictWriter(response, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        return response
 
 
     def view_logs_view(self, request):
