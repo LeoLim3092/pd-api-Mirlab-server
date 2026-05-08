@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+
+<p>{{ message }}</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    {% for key, value in confirm_payload.items %}
+    <input type="hidden" name="{{ key }}" value="{{ value }}">
+    {% endfor %}
+    <button type="submit" class="button default">{{ confirm_label }}</button>
+    <a class="button" href="{{ back_url }}" style="margin-left: 8px;">Cancel</a>
+</form>
+{% endblock %}

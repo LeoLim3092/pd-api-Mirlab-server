@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Rerun Latest Model Prediction</h1>
+
+<p>Select a patient to rerun model predictions using the latest extracted features only. A new result record will be saved.</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <p>
+        {{ form.patient.label_tag }}<br>
+        {{ form.patient }}
+    </p>
+    {% if form.non_field_errors %}
+    <div style="color: red; margin-bottom: 1rem;">
+        {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+    <button type="submit" class="button default">Continue</button>
+</form>
+
+<br>
+<a class="button" href="{% url 'admin:backend-functions' %}">Back to Backend Functions</a>
+{% endblock %}

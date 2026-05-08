@@ -127,6 +127,7 @@ class CustomAdminSite(admin.AdminSite):
         custom_urls = [
             path('backend-functions/', self.admin_view(self.backend_functions_view), name="backend-functions"),
             path('backend-functions/rerun-predictions/', self.admin_view(self.rerun_predictions), name="rerun-predictions"),
+            path('backend-functions/rerun-latest-predictions/', self.admin_view(self.rerun_latest_predictions_view), name="rerun-latest-predictions"),
             path('backend-functions/download-data/', self.admin_view(self.download_data_view), name="download-data"),
             path('backend-functions/download-results-questionnaires/', self.admin_view(self.download_results_questionnaires_view), name="download-results-questionnaires"),
             path('backend-functions/view-logs/', self.admin_view(self.view_logs_view), name="view-logs"),
@@ -147,16 +148,38 @@ class CustomAdminSite(admin.AdminSite):
             title='Backend Functions',
         )
 
+    def _post_with_admin_token(self, request, url, data=None):
+        token = str(AccessToken.for_user(request.user))
+        headers = {"Authorization": f"Bearer {token}"}
+        return requests.post(url, data=data, headers=headers)
+
+    def _render_confirmation_page(self, request, title, message, confirm_label, back_url, confirm_payload):
+        return self.render_admin_page(
+            request,
+            "admin/confirm_action.html",
+            title=title,
+            message=message,
+            confirm_label=confirm_label,
+            back_url=back_url,
+            confirm_payload=confirm_payload,
+        )
+
     def rerun_predictions(self, request):
         url = "http://140.112.91.59:10409/api/rerun_all_predictions"
+        back_url = reverse('admin:backend-functions')
+
+        if request.method != 'POST' or request.POST.get('confirm') != '1':
+            return self._render_confirmation_page(
+                request,
+                title="Confirm Rerun All Predictions",
+                message="This will rerun predictions for all patients. This action can take a long time and create new result records.",
+                confirm_label="Confirm rerun all predictions",
+                back_url=back_url,
+                confirm_payload={"confirm": "1"},
+            )
 
         try:
-            token = str(AccessToken.for_user(request.user))
-            headers = {
-                "Authorization": f"Bearer {token}"
-            }
-
-            response = requests.post(url, headers=headers)
+            response = self._post_with_admin_token(request, url)
             if response.status_code == 200:
                 messages.success(request, "✅ Rerun completed successfully.", level='SUCCESS')
             else:
@@ -164,19 +187,27 @@ class CustomAdminSite(admin.AdminSite):
         except Exception as e:
            messages.error(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
 
-        return HttpResponseRedirect(reverse('admin:backend-functions'))
-    
+        return HttpResponseRedirect(back_url)
+
 
     def rerun_single_patient(self, request, patient_id):
+        back_url = reverse('admin:api_patient_changelist')
+        patient = Patient.objects.filter(patientId=patient_id).first()
+        patient_label = patient.name if patient else f"Patient {patient_id}"
+
+        if request.method != 'POST' or request.POST.get('confirm') != '1':
+            return self._render_confirmation_page(
+                request,
+                title="Confirm Latest Prediction Rerun",
+                message=f"This will rerun model predictions for {patient_label} using the latest extracted features only, then save a new result record.",
+                confirm_label="Confirm rerun latest prediction",
+                back_url=back_url,
+                confirm_payload={"confirm": "1"},
+            )
+
         try:
             url = "http://140.112.91.59:10409/api/predict_without_model_extraction"
-
-            token = str(AccessToken.for_user(request.user))
-            headers = {
-                "Authorization": f"Bearer {token}"
-            }
-
-            response = requests.post(url, data={"pid": patient_id}, headers=headers)
+            response = self._post_with_admin_token(request, url, data={"pid": patient_id})
 
             if response.status_code == 200:
                 messages.success(request, f"✅ Prediction rerun for patient {patient_id}.")
@@ -185,7 +216,60 @@ class CustomAdminSite(admin.AdminSite):
         except Exception as e:
             messages.error(request, f"❌ Error running prediction: {e}")
 
-        return HttpResponseRedirect(reverse('admin:api_patient_changelist'))
+        return HttpResponseRedirect(back_url)
+
+    def rerun_latest_predictions_view(self, request):
+        if request.method == "POST" and request.POST.get("confirm") == "1":
+            form = SelectPatientForm(request.POST)
+            if form.is_valid():
+                patient = form.cleaned_data["patient"]
+                try:
+                    response = self._post_with_admin_token(
+                        request,
+                        "http://140.112.91.59:10409/api/predict_without_model_extraction",
+                        data={"pid": patient.patientId},
+                    )
+                    if response.status_code == 200:
+                        messages.success(
+                            request,
+                            f"✅ Latest prediction rerun completed for patient {patient.patientId}.",
+                        )
+                    else:
+                        messages.error(
+                            request,
+                            f"❌ Prediction failed. Status: {response.status_code}",
+                        )
+                except Exception as e:
+                    messages.error(request, f"❌ Error running prediction: {e}")
+                return HttpResponseRedirect(reverse('admin:backend-functions'))
+        elif request.method == "POST":
+            form = SelectPatientForm(request.POST)
+            if form.is_valid():
+                patient = form.cleaned_data["patient"]
+                return self._render_confirmation_page(
+                    request,
+                    title="Confirm Latest Prediction Rerun",
+                    message=(
+                        f"This will rerun model predictions for {patient.name} "
+                        f"(ID: {patient.patientId}) using the latest extracted features only, "
+                        "then save a new result record."
+                    ),
+                    confirm_label="Confirm rerun latest prediction",
+                    back_url=reverse('admin:rerun-latest-predictions'),
+                    confirm_payload={
+                        "confirm": "1",
+                        "patient": str(patient.patientId),
+                    },
+                )
+        else:
+            form = SelectPatientForm()
+
+        return self.render_admin_page(
+            request,
+            "admin/rerun_latest_predictions.html",
+            title="Rerun Latest Model Prediction",
+            form=form,
+        )
 
     
     def download_data_view(self, request):
@@ -499,6 +583,14 @@ class DownloadResultsQuestionnairesForm(forms.Form):
         return cleaned_data
 
 
+class SelectPatientForm(forms.Form):
+    patient = forms.ModelChoiceField(
+        queryset=Patient.objects.order_by('name'),
+        label="Patient",
+        empty_label="-- Select patient --",
+    )
+
+
 # Instantiate the custom admin site
 admin_site = CustomAdminSite(name='custom_admin')
 
@@ -512,7 +604,7 @@ class PatientAdmin(admin.ModelAdmin):
 
     def rerun_button(self, obj):
         url = reverse('admin:rerun-patient', args=[obj.patientId])
-        return format_html('<a class="button" href="{}">Rerun Prediction</a>', url)
+        return format_html('<a class="button" href="{}">Rerun Latest Prediction</a>', url)
 
     rerun_button.short_description = 'Actions'
     
