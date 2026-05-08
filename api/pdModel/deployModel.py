@@ -3,6 +3,7 @@ from .handExtraction import hand_extraction, hand_checking
 from .voiceFeatureExtraction import voice_features_extraction, sound_checking
 from . import handFeaturesExtraction
 from . import gaitFeaturesExtraction
+from .pd_calibration_only import calibrate_new_predictions
 import os
 from datetime import datetime
 import joblib
@@ -12,6 +13,7 @@ import cv2
 
 
 MODEL_PATHS = "/home/pdapp/pd_api_server/api/pdModel/PD_pretrained_models/"
+CALIBRATOR_PATH = os.path.join(os.path.dirname(__file__), "pd_calibrators.json")
 HAND_LANDMARK_PATH = "/mnt/pd_app/handLandmarks/"
 GAIT_LANDMARK_PATH = "/mnt/pd_app/gaitLandmarks/"
 TRAINED_MODELS_LS = ["RF"]  # remove KNN, "GBM", "LightGBM", "C4.5 DT", "LogReg", "NB", "RF", "AdaBoost",
@@ -340,9 +342,20 @@ def predict_models(all_features_pth, age, gender, out_dir=""):
     for k in TRAINED_MODELS_LS:
         all_result[k] = np.average(np.array([[gait_result[k]], [hand_result[k]],
                                              [voice_result[k]]]), weights=weight, axis=0)[0]
-        
-    results = np.array([gait_result["RF"][0], hand_result["RF"][0], voice_result["RF"][0],
-                            all_result["RF"][0]]) * 100
+
+    raw_results = {
+        "gait": float(gait_result["RF"][0]) * 100,
+        "voice": float(voice_result["RF"][0]) * 100,
+        "hand": float(hand_result["RF"][0]) * 100,
+        "ensemble": float(all_result["RF"][0]) * 100,
+    }
+    calibrated_results = calibrate_new_predictions(raw_results, CALIBRATOR_PATH)
+    results = np.array([
+        calibrated_results["gait"],
+        calibrated_results["hand"],
+        calibrated_results["voice"],
+        calibrated_results["ensemble"],
+    ]) * 100
         
     if out_dir:
 
