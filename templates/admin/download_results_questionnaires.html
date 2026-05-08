@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Download Results and Questionnaires</h1>
+
+<p>Download each patient's latest questionnaire and latest prediction within the selected date range.</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <p>
+        {{ form.from_date.label_tag }}<br>
+        {{ form.from_date }}
+    </p>
+    <p>
+        {{ form.to_date.label_tag }}<br>
+        {{ form.to_date }}
+    </p>
+
+    <button type="submit" class="button default">Download CSV</button>
+</form>
+
+<br>
+<a class="button" href="{% url 'admin:backend-functions' %}">Back to Backend Functions</a>
+{% endblock %}

@@ -235,18 +235,35 @@ class CustomAdminSite(admin.AdminSite):
         )
 
     def download_results_questionnaires_view(self, request):
-        rows, fieldnames = build_results_questionnaire_export_rows()
-        today = datetime.datetime.now().strftime("%Y%m%d")
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = (
-            f'attachment; filename="{today}_results_questionnaires.csv"'
+        if request.method == "POST":
+            form = DownloadResultsQuestionnairesForm(request.POST)
+            if form.is_valid():
+                from_date = form.cleaned_data["from_date"]
+                to_date = form.cleaned_data["to_date"]
+                rows, fieldnames = build_results_questionnaire_export_rows(
+                    from_date=from_date,
+                    to_date=to_date,
+                )
+                today = datetime.datetime.now().strftime("%Y%m%d")
+                response = HttpResponse(content_type="text/csv; charset=utf-8")
+                response["Content-Disposition"] = (
+                    f'attachment; filename="{today}_results_questionnaires_{from_date}_to_{to_date}.csv"'
+                )
+                response.write("\ufeff")
+                writer = csv.DictWriter(response, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
+                return response
+        else:
+            form = DownloadResultsQuestionnairesForm()
+
+        return self.render_admin_page(
+            request,
+            "admin/download_results_questionnaires.html",
+            title="Download Results and Questionnaires",
+            form=form,
         )
-        response.write("\ufeff")
-        writer = csv.DictWriter(response, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-        return response
 
 
     def view_logs_view(self, request):
@@ -467,6 +484,19 @@ class DownloadDataForm(forms.Form):
         super().__init__(*args, **kwargs)
         file_type_choices = FileUploaded.objects.values_list('file_type', 'file_type').distinct()
         self.fields['data_type'] = forms.ChoiceField(label="Data Type", choices=file_type_choices)
+
+
+class DownloadResultsQuestionnairesForm(forms.Form):
+    from_date = forms.DateField(label="From Date", widget=forms.DateInput(attrs={'type': 'date'}))
+    to_date = forms.DateField(label="To Date", widget=forms.DateInput(attrs={'type': 'date'}))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        from_date = cleaned_data.get("from_date")
+        to_date = cleaned_data.get("to_date")
+        if from_date and to_date and from_date > to_date:
+            raise forms.ValidationError("From Date must be earlier than or equal to To Date.")
+        return cleaned_data
 
 
 # Instantiate the custom admin site

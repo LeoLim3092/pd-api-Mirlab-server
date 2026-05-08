@@ -1,3 +1,4 @@
+import datetime
 import json
 
 from .models import PatientQuestionaireRecord, Results
@@ -200,40 +201,86 @@ def _answer_text(question_id, answer_index):
     return None
 
 
-def _latest_results_by_patient():
+def _parse_datetime_value(value):
+    if not value:
+        return None
+    if isinstance(value, datetime.datetime):
+        return value
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d_%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y%m%d_%H%M%S", "%Y%m%d"):
+        try:
+            return datetime.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _is_within_date_range(value, from_date=None, to_date=None):
+    dt = _parse_datetime_value(value)
+    if dt is None:
+        return False
+    current_date = dt.date()
+    if from_date and current_date < from_date:
+        return False
+    if to_date and current_date > to_date:
+        return False
+    return True
+
+
+def _latest_results_by_patient(from_date=None, to_date=None):
     latest_results = {}
     queryset = Results.objects.select_related("patientId").order_by("patientId_id", "-upload_time")
     for result in queryset:
+        if not _is_within_date_range(result.upload_time, from_date, to_date):
+            continue
         latest_results.setdefault(result.patientId_id, result)
     return latest_results
 
 
-def build_results_questionnaire_export_rows():
-    latest_results = _latest_results_by_patient()
+def _latest_questionnaires_by_patient(from_date=None, to_date=None):
+    latest_questionnaires = {}
+    queryset = (
+        PatientQuestionaireRecord.objects
+        .select_related("patientId")
+        .order_by("patientId_id", "-time")
+    )
+    for record in queryset:
+        if not _is_within_date_range(record.time, from_date, to_date):
+            continue
+        latest_questionnaires.setdefault(record.patientId_id, record)
+    return latest_questionnaires
+
+
+def build_results_questionnaire_export_rows(from_date=None, to_date=None):
+    latest_results = _latest_results_by_patient(from_date=from_date, to_date=to_date)
+    latest_questionnaires = _latest_questionnaires_by_patient(from_date=from_date, to_date=to_date)
     rows = []
     extra_columns = []
     extra_seen = set()
 
-    queryset = (
-        PatientQuestionaireRecord.objects
-        .select_related("patientId")
-        .order_by("patientId__patientId", "time")
-    )
+    patient_ids = sorted(set(latest_results) | set(latest_questionnaires))
+    for patient_id in patient_ids:
+        latest_result = latest_results.get(patient_id)
+        record = latest_questionnaires.get(patient_id)
+        patient = None
+        if record is not None:
+            patient = record.patientId
+        elif latest_result is not None:
+            patient = latest_result.patientId
+        if patient is None:
+            continue
 
-    for record in queryset:
-        patient = record.patientId
-        latest_result = latest_results.get(patient.patientId)
         row = {field: "" for field in get_export_fieldnames()}
         row.update({
             "patient_id": patient.patientId,
             "app_id": patient.name,
             "username": patient.user_name,
-            "questionnaire_time": record.time,
-            "riskMarker": record.riskMarker,
-            "PLR": record.PLR,
-            "TELR": record.TELR,
-            "PostProb": record.PostProb,
-            "PPPD": record.PPPD,
+            "questionnaire_time": record.time if record else "",
+            "riskMarker": record.riskMarker if record else "",
+            "PLR": record.PLR if record else "",
+            "TELR": record.TELR if record else "",
+            "PostProb": record.PostProb if record else "",
+            "PPPD": record.PPPD if record else "",
             "result_upload_time": latest_result.upload_time if latest_result else "",
             "gait_result": latest_result.gait_result if latest_result else "",
             "voice_result": latest_result.voice_result if latest_result else "",
@@ -241,7 +288,7 @@ def build_results_questionnaire_export_rows():
             "multimodal_results": latest_result.multimodal_results if latest_result else "",
         })
 
-        for item in _coerce_response_list(record.response):
+        for item in _coerce_response_list(record.response if record else None):
             question_id = _normalize_question_id(item.get("question"))
             answer_index = _normalize_answer_index(item.get("response"))
             question = QUESTION_BANK.get(question_id)
