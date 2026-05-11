@@ -3,6 +3,7 @@
 <h1>Redo features extraction and prediction</h1>
 
 <p>Select a patient. On the next step you will confirm. The server will re-extract features from their latest gait, left/right hand, and voice files, run the multimodal prediction, and store a new result.</p>
+<p><strong>After you confirm</strong>, the browser may show no progress for several minutes while the server runs—that is normal. Wait until you are redirected back to Backend Functions.</p>
 
 <form method="post" novalidate>
     {% csrf_token %}

@@ -277,33 +277,21 @@ class CustomAdminSite(admin.AdminSite):
         )
 
     def redo_features_and_prediction_view(self, request):
-        api_url = "http://140.112.91.59:10409/api/redo_patient_features_and_prediction"
-
         if request.method == "POST" and request.POST.get("confirm") == "1":
             form = SelectPatientForm(request.POST)
             if form.is_valid():
                 patient = form.cleaned_data["patient"]
                 try:
-                    response = self._post_with_admin_token(
+                    # Same-process call: avoids HTTP round-trip to a fixed host/port (often wrong in
+                    # production) and matches the redo API behavior. Still blocks until ML finishes—
+                    # keep this tab open; raise reverse-proxy read timeouts if needed.
+                    from .views import run_predict_model
+
+                    run_predict_model(patient.patientId)
+                    messages.success(
                         request,
-                        api_url,
-                        data={"pid": patient.patientId},
+                        f"✅ Feature extraction and prediction completed for patient {patient.patientId}.",
                     )
-                    if response.status_code == 200:
-                        messages.success(
-                            request,
-                            f"✅ Feature extraction and prediction completed for patient {patient.patientId}.",
-                        )
-                    else:
-                        detail = ""
-                        try:
-                            detail = response.json().get("error", "")
-                        except Exception:
-                            detail = response.text[:500]
-                        messages.error(
-                            request,
-                            f"❌ Request failed ({response.status_code}). {detail}",
-                        )
                 except Exception as e:
                     messages.error(request, f"❌ Error: {e}")
                 return HttpResponseRedirect(reverse('admin:backend-functions'))
@@ -318,7 +306,9 @@ class CustomAdminSite(admin.AdminSite):
                         f"This will re-extract gait, hand, and voice features from "
                         f"{patient.name}'s latest recordings (ID: {patient.patientId}), "
                         "run the full multimodal models, and save a new result record. "
-                        "This can take several minutes."
+                        "The next page may take several minutes—do not close or refresh "
+                        "this tab until the server finishes; if nothing happens after 10 minutes, "
+                        "check nginx/gunicorn timeouts and server logs."
                     ),
                     confirm_label="Confirm re-extraction and prediction",
                     back_url=reverse('admin:redo-features-and-prediction'),

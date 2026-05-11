@@ -16,3 +16,6 @@ media/
 *.log
 django.log
 logs/
+
+# collectstatic output (deploy machine)
+staticfiles/
