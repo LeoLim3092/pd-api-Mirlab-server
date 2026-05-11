@@ -128,6 +128,11 @@ class CustomAdminSite(admin.AdminSite):
             path('backend-functions/', self.admin_view(self.backend_functions_view), name="backend-functions"),
             path('backend-functions/rerun-predictions/', self.admin_view(self.rerun_predictions), name="rerun-predictions"),
             path('backend-functions/rerun-latest-predictions/', self.admin_view(self.rerun_latest_predictions_view), name="rerun-latest-predictions"),
+            path(
+                'backend-functions/redo-features-and-prediction/',
+                self.admin_view(self.redo_features_and_prediction_view),
+                name='redo-features-and-prediction',
+            ),
             path('backend-functions/download-data/', self.admin_view(self.download_data_view), name="download-data"),
             path('backend-functions/download-results-questionnaires/', self.admin_view(self.download_results_questionnaires_view), name="download-results-questionnaires"),
             path('backend-functions/view-logs/', self.admin_view(self.view_logs_view), name="view-logs"),
@@ -268,6 +273,67 @@ class CustomAdminSite(admin.AdminSite):
             request,
             "admin/rerun_latest_predictions.html",
             title="Rerun Latest Model Prediction",
+            form=form,
+        )
+
+    def redo_features_and_prediction_view(self, request):
+        api_url = "http://140.112.91.59:10409/api/redo_patient_features_and_prediction"
+
+        if request.method == "POST" and request.POST.get("confirm") == "1":
+            form = SelectPatientForm(request.POST)
+            if form.is_valid():
+                patient = form.cleaned_data["patient"]
+                try:
+                    response = self._post_with_admin_token(
+                        request,
+                        api_url,
+                        data={"pid": patient.patientId},
+                    )
+                    if response.status_code == 200:
+                        messages.success(
+                            request,
+                            f"✅ Feature extraction and prediction completed for patient {patient.patientId}.",
+                        )
+                    else:
+                        detail = ""
+                        try:
+                            detail = response.json().get("error", "")
+                        except Exception:
+                            detail = response.text[:500]
+                        messages.error(
+                            request,
+                            f"❌ Request failed ({response.status_code}). {detail}",
+                        )
+                except Exception as e:
+                    messages.error(request, f"❌ Error: {e}")
+                return HttpResponseRedirect(reverse('admin:backend-functions'))
+        elif request.method == "POST":
+            form = SelectPatientForm(request.POST)
+            if form.is_valid():
+                patient = form.cleaned_data["patient"]
+                return self._render_confirmation_page(
+                    request,
+                    title="Confirm full re-extraction and prediction",
+                    message=(
+                        f"This will re-extract gait, hand, and voice features from "
+                        f"{patient.name}'s latest recordings (ID: {patient.patientId}), "
+                        "run the full multimodal models, and save a new result record. "
+                        "This can take several minutes."
+                    ),
+                    confirm_label="Confirm re-extraction and prediction",
+                    back_url=reverse('admin:redo-features-and-prediction'),
+                    confirm_payload={
+                        "confirm": "1",
+                        "patient": str(patient.patientId),
+                    },
+                )
+        else:
+            form = SelectPatientForm()
+
+        return self.render_admin_page(
+            request,
+            "admin/redo_features_and_prediction.html",
+            title="Redo features extraction and prediction",
             form=form,
         )
 

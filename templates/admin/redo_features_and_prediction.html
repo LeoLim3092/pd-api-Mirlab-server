@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Redo features extraction and prediction</h1>
+
+<p>Select a patient. On the next step you will confirm. The server will re-extract features from their latest gait, left/right hand, and voice files, run the multimodal prediction, and store a new result.</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <p>
+        {{ form.patient.label_tag }}<br>
+        {{ form.patient }}
+    </p>
+    {% if form.non_field_errors %}
+    <div style="color: red; margin-bottom: 1rem;">
+        {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+    <button type="submit" class="button default">Continue</button>
+</form>
+
+<br>
+<a class="button" href="{% url 'admin:backend-functions' %}">Back to Backend Functions</a>
+{% endblock %}

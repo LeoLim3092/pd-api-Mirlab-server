@@ -23,6 +23,11 @@ urlpatterns += [
     path('create_new_patient', views.CreateNewPatient.as_view()),
     path('google_login', views.GoogleLogin.as_view()),
     path('predict_model', views.PredictModel.as_view()),
+    path(
+        'redo_patient_features_and_prediction',
+        views.RedoPatientFeaturesAndPrediction.as_view(),
+        name='redo-patient-features-and-prediction',
+    ),
     path('predict_without_model_extraction', views.PredictWithoutModelExtraction.as_view(), name='predict-without-model'),
     path('get_results', views.GetResults.as_view()),
     path('upload_medicine_record', views.UploadMedicineRecord.as_view()),

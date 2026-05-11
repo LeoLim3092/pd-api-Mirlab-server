@@ -513,6 +513,32 @@ class PredictModel(APIView):
             )
 
 
+class RedoPatientFeaturesAndPrediction(APIView):
+    """
+    Re-run feature extraction from the patient's latest uploads (gait, hands, sound)
+    and full multimodal model prediction; saves a new Results row (same pipeline as PredictModel).
+    """
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: WSGIRequest):
+        pid = request.POST.get("pid") or (request.data.get("pid") if hasattr(request, "data") else None)
+        if not pid:
+            return Response({"error": "Missing 'pid'"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            pid_int = int(pid)
+        except (TypeError, ValueError):
+            return Response({"error": "Invalid 'pid'"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            run_predict_model(pid_int)
+            return Response({"ok": True, "patientId": pid_int}, status=status.HTTP_200_OK)
+        except Patient.DoesNotExist:
+            return Response({"error": "Patient not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class GetResults(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
