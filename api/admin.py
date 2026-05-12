@@ -170,29 +170,42 @@ class CustomAdminSite(admin.AdminSite):
         )
 
     def rerun_predictions(self, request):
-        url = "http://140.112.91.59:10409/api/rerun_all_predictions"
         back_url = reverse('admin:backend-functions')
+        if request.method == 'POST':
+            form = RerunPredictionsDateForm(request.POST)
+            if form.is_valid():
+                from_date = form.cleaned_data['from_date']
+                to_date = form.cleaned_data['to_date']
+                url = "http://140.112.91.59:10409/api/rerun_all_predictions"
+                payload = {
+                    "from_date": from_date.isoformat(),
+                    "to_date": to_date.isoformat(),
+                }
+                try:
+                    response = self._post_with_admin_token(request, url, data=payload)
+                    if response.status_code == 200:
+                        messages.success(
+                            request,
+                            (
+                                "✅ Rerun completed successfully using existing extracted features. "
+                                "New result records were saved."
+                            ),
+                            level='SUCCESS',
+                        )
+                    else:
+                        messages.error(request, f"❌ Failed with status code: {response.status_code}", level='ERROR')
+                except Exception as e:
+                    messages.error(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
+                return HttpResponseRedirect(back_url)
+        else:
+            form = RerunPredictionsDateForm()
 
-        if request.method != 'POST' or request.POST.get('confirm') != '1':
-            return self._render_confirmation_page(
-                request,
-                title="Confirm Rerun All Predictions",
-                message="This will rerun predictions for all patients. This action can take a long time and create new result records.",
-                confirm_label="Confirm rerun all predictions",
-                back_url=back_url,
-                confirm_payload={"confirm": "1"},
-            )
-
-        try:
-            response = self._post_with_admin_token(request, url)
-            if response.status_code == 200:
-                messages.success(request, "✅ Rerun completed successfully.", level='SUCCESS')
-            else:
-                messages.error(request, f"❌ Failed with status code: {response.status_code}", level='ERROR')
-        except Exception as e:
-           messages.error(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
-
-        return HttpResponseRedirect(back_url)
+        return self.render_admin_page(
+            request,
+            "admin/rerun_predictions.html",
+            title="Rerun Predictions by Date Range",
+            form=form,
+        )
 
 
     def rerun_single_patient(self, request, patient_id):
@@ -624,6 +637,19 @@ class DownloadDataForm(forms.Form):
         super().__init__(*args, **kwargs)
         file_type_choices = FileUploaded.objects.values_list('file_type', 'file_type').distinct()
         self.fields['data_type'] = forms.ChoiceField(label="Data Type", choices=file_type_choices)
+
+
+class RerunPredictionsDateForm(forms.Form):
+    from_date = forms.DateField(label="From Date", widget=forms.DateInput(attrs={'type': 'date'}))
+    to_date = forms.DateField(label="To Date", widget=forms.DateInput(attrs={'type': 'date'}))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        from_date = cleaned_data.get("from_date")
+        to_date = cleaned_data.get("to_date")
+        if from_date and to_date and from_date > to_date:
+            raise forms.ValidationError("From Date must be earlier than or equal to To Date.")
+        return cleaned_data
 
 
 class DownloadResultsQuestionnairesForm(forms.Form):

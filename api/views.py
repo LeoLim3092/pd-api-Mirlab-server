@@ -466,28 +466,11 @@ class PredictWithoutModelExtraction(APIView):
         if not pid:
             return HttpResponseBadRequest("Missing 'pid'")
         
-        p = Patient.objects.get(patientId=int(pid))
-        age = p.age
-        gender = p.gender
-        name = p.name
-        format = '%Y-%m-%d_%H:%M:%S'
-        current_time = datetime.datetime.now().strftime(format)
-        
-        out_dir = f'/mnt/pd_app/results/{name}/'
-        latest_folder = get_latest_folder_by_creation_time(out_dir)
-        if not latest_folder:
-            return Response(
-                {"error": "No previous extraction found. Run full prediction first."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        lastest_extracted_npy = os.path.join(latest_folder, "all_feature.npy")
-        
         try:
-            gait_result, hand_result, voice_results, all_results = predict_models(lastest_extracted_npy, age, gender)
-            r = Results(patientId=p, patient=name, gait_result=gait_result, voice_result=voice_results,
-                        hand_result=hand_result, multimodal_results=all_results, upload_time=current_time)
-            r.save()
+            run_predict_from_latest_extracted_features(int(pid), save_results=True)
             return HttpResponse()
+        except Patient.DoesNotExist:
+            return Response({"error": "Patient not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             error_message = "Failed to process data"
             return Response({"error": error_message, "detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -737,13 +720,24 @@ class RerunAllPatientPredictModel(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
+        from_date_str = request.POST.get('from_date') or request.data.get('from_date')
+        to_date_str = request.POST.get('to_date') or request.data.get('to_date')
 
-        patients = Patient.objects.all()
+        date_error, from_date, to_date = _parse_date_range(from_date_str, to_date_str)
+        if date_error:
+            return JsonResponse({"error": date_error}, status=400)
+
+        patients = Patient.objects.filter(
+            created_at__date__gte=from_date,
+            created_at__date__lte=to_date,
+        )
         failed_patients = []
+        succeeded_patient_ids = []
 
         for patient in patients:
             try:
-                run_predict_model(patient.patientId, save_result=False)
+                run_predict_from_latest_extracted_features(patient.patientId, save_results=True)
+                succeeded_patient_ids.append(patient.patientId)
 
             except Exception as e:
                 failed_patients.append({
@@ -752,45 +746,55 @@ class RerunAllPatientPredictModel(APIView):
                 })
 
         return JsonResponse({
-            "message": "Rerun completed",
+            "message": "Rerun completed using existing extracted features only",
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "total_patients": len(succeeded_patient_ids) + len(failed_patients),
+            "successful_patients": succeeded_patient_ids,
             "failed_patients": failed_patients
         })
 
 
 class RerunFromDatePatientPrediction(APIView):
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request: WSGIRequest):
-        # Get the date from the request
-        date_str = request.POST.get('date', None)
-        if not date_str:
-            return JsonResponse({"error": "Date is required in the format YYYY-MM-DD"}, status=400)
+        # Backward compatible:
+        # - date=YYYY-MM-DD => from_date only
+        # - from_date/to_date => explicit date range
+        legacy_date = request.POST.get('date') or request.data.get('date')
+        from_date_str = request.POST.get('from_date') or request.data.get('from_date') or legacy_date
+        to_date_str = request.POST.get('to_date') or request.data.get('to_date')
 
-        try:
-            # Parse the date
-            from_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
-        except ValueError:
-            return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+        date_error, from_date, to_date = _parse_date_range(from_date_str, to_date_str)
+        if date_error:
+            return JsonResponse({"error": date_error}, status=400)
 
-        # Fetch patients created on or after the given date
-        patients = Patient.objects.filter(created_at__date__gte=from_date)
+        patients = Patient.objects.filter(
+            created_at__date__gte=from_date,
+            created_at__date__lte=to_date,
+        )
         failed_patients = []
+        succeeded_patient_ids = []
 
         for patient in patients:
             try:
-                run_predict_model(patient.patientId, save_result=False)
+                run_predict_from_latest_extracted_features(patient.patientId, save_results=True)
+                succeeded_patient_ids.append(patient.patientId)
 
             except Exception as e:
-                # Log the failure for this patient
                 failed_patients.append({
                     "patientId": patient.patientId,
                     "reason": str(e)
                 })
 
-        # Return a summary of the operation
         return JsonResponse({
-            "message": "Rerun completed",
+            "message": "Rerun completed using existing extracted features only",
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "total_patients": len(succeeded_patient_ids) + len(failed_patients),
+            "successful_patients": succeeded_patient_ids,
             "failed_patients": failed_patients
         })
 
@@ -893,6 +897,72 @@ def run_predict_model(patient_id, save_results=True):
         print("finish models prediction")
         
     return result_data
+
+
+def run_predict_from_latest_extracted_features(patient_id, save_results=True):
+    time_format = '%Y-%m-%d_%H:%M:%S'
+    current_time = datetime.datetime.now().strftime(time_format)
+    p = Patient.objects.get(patientId=int(patient_id))
+
+    age = p.age
+    gender = p.gender
+    name = p.name
+
+    out_dir = f'/mnt/pd_app/results/{name}/'
+    if not os.path.isdir(out_dir):
+        raise Exception("No previous extraction found. Run full prediction first.")
+
+    latest_folder = get_latest_folder_by_creation_time(out_dir)
+    if not latest_folder:
+        raise Exception("No previous extraction found. Run full prediction first.")
+
+    latest_extracted_npy = os.path.join(latest_folder, "all_feature.npy")
+    if not os.path.isfile(latest_extracted_npy):
+        raise Exception("No extracted feature file found for latest result folder.")
+
+    gait_result, hand_result, voice_results, all_results = predict_models(
+        latest_extracted_npy,
+        age,
+        gender
+    )
+
+    result_data = {
+        "patientId": p,
+        "patient": name,
+        "gait_result": gait_result,
+        "voice_result": voice_results,
+        "hand_result": hand_result,
+        "multimodal_results": all_results,
+        "upload_time": current_time,
+    }
+
+    if save_results:
+        return Results.objects.create(**result_data)
+
+    return result_data
+
+
+def _parse_date_range(from_date_str, to_date_str=None):
+    if not from_date_str:
+        return "from_date is required in format YYYY-MM-DD.", None, None
+
+    try:
+        from_date = datetime.datetime.strptime(from_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return "Invalid from_date format. Use YYYY-MM-DD.", None, None
+
+    if to_date_str:
+        try:
+            to_date = datetime.datetime.strptime(to_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return "Invalid to_date format. Use YYYY-MM-DD.", None, None
+    else:
+        to_date = datetime.date.today()
+
+    if from_date > to_date:
+        return "from_date must be earlier than or equal to to_date.", None, None
+
+    return None, from_date, to_date
 
 
 def get_tokens_for_user(user):

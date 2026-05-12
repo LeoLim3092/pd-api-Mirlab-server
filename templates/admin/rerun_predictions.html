@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Rerun Predictions by Date Range</h1>
+
+<p>
+    Select a date range to rerun predictions for matching patients using already extracted features only.
+    No feature extraction will run. New result records will be saved.
+</p>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <p>
+        {{ form.from_date.label_tag }}<br>
+        {{ form.from_date }}
+    </p>
+    <p>
+        {{ form.to_date.label_tag }}<br>
+        {{ form.to_date }}
+    </p>
+    {% if form.non_field_errors %}
+    <div style="color: red; margin-bottom: 1rem;">
+        {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+    <button type="submit" class="button default">Rerun Predictions</button>
+</form>
+
+<br>
+<a class="button" href="{% url 'admin:backend-functions' %}">Back to Backend Functions</a>
+{% endblock %}
