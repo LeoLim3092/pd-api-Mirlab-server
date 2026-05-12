@@ -26,6 +26,7 @@ from django.contrib.auth.models import Group, User
 from rest_framework.authtoken.models import Token
 from django.utils.html import format_html
 import datetime
+import threading
 
 
 logger = logging.getLogger('django')
@@ -156,7 +157,28 @@ class CustomAdminSite(admin.AdminSite):
     def _post_with_admin_token(self, request, url, data=None):
         token = str(AccessToken.for_user(request.user))
         headers = {"Authorization": f"Bearer {token}"}
-        return requests.post(url, data=data, headers=headers)
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = request.build_absolute_uri(url)
+        return requests.post(url, data=data, headers=headers, timeout=30)
+
+    def _run_bulk_rerun_predictions(self, patient_ids):
+        from .views import run_predict_from_latest_extracted_features
+
+        succeeded = 0
+        failed = []
+        for patient_id in patient_ids:
+            try:
+                run_predict_from_latest_extracted_features(patient_id, save_results=True)
+                succeeded += 1
+            except Exception as exc:
+                failed.append({"patientId": patient_id, "reason": str(exc)})
+
+        logger.info(
+            "Bulk rerun predictions completed. success=%s failed=%s details=%s",
+            succeeded,
+            len(failed),
+            failed,
+        )
 
     def _render_confirmation_page(self, request, title, message, confirm_label, back_url, confirm_payload):
         return self.render_admin_page(
@@ -176,26 +198,30 @@ class CustomAdminSite(admin.AdminSite):
             if form.is_valid():
                 from_date = form.cleaned_data['from_date']
                 to_date = form.cleaned_data['to_date']
-                url = "http://140.112.91.59:10409/api/rerun_all_predictions"
-                payload = {
-                    "from_date": from_date.isoformat(),
-                    "to_date": to_date.isoformat(),
-                }
                 try:
-                    response = self._post_with_admin_token(request, url, data=payload)
-                    if response.status_code == 200:
-                        messages.success(
-                            request,
-                            (
-                                "✅ Rerun completed successfully using existing extracted features. "
-                                "New result records were saved."
-                            ),
-                            level='SUCCESS',
-                        )
-                    else:
-                        messages.error(request, f"❌ Failed with status code: {response.status_code}", level='ERROR')
+                    patient_ids = list(
+                        Patient.objects.filter(
+                            created_at__date__gte=from_date,
+                            created_at__date__lte=to_date,
+                        ).values_list("patientId", flat=True)
+                    )
+                    thread = threading.Thread(
+                        target=self._run_bulk_rerun_predictions,
+                        args=(patient_ids,),
+                        daemon=True,
+                    )
+                    thread.start()
+                    messages.success(
+                        request,
+                        (
+                            "✅ Rerun job started in background "
+                            f"for {len(patient_ids)} patients "
+                            f"({from_date.isoformat()} to {to_date.isoformat()}). "
+                            "Using extracted features only and saving new results."
+                        ),
+                    )
                 except Exception as e:
-                    messages.error(request, f"⚠️ Exception occurred: {str(e)}", level='ERROR')
+                    messages.error(request, f"⚠️ Exception occurred: {str(e)}")
                 return HttpResponseRedirect(back_url)
         else:
             form = RerunPredictionsDateForm()
@@ -224,7 +250,7 @@ class CustomAdminSite(admin.AdminSite):
             )
 
         try:
-            url = "http://140.112.91.59:10409/api/predict_without_model_extraction"
+            url = "/api/predict_without_model_extraction"
             response = self._post_with_admin_token(request, url, data={"pid": patient_id})
 
             if response.status_code == 200:
@@ -244,7 +270,7 @@ class CustomAdminSite(admin.AdminSite):
                 try:
                     response = self._post_with_admin_token(
                         request,
-                        "http://140.112.91.59:10409/api/predict_without_model_extraction",
+                        "/api/predict_without_model_extraction",
                         data={"pid": patient.patientId},
                     )
                     if response.status_code == 200:
